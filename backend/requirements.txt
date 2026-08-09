@@ -1,0 +1,4 @@
+# 지금 실제로 쓰는 것만 적는다. 필요해지는 단계에서 하나씩 추가한다.
+fastapi              # 웹 서버 프레임워크
+uvicorn[standard]    # FastAPI 를 실제로 구동하는 프로그램
+pydantic-settings    # .env 파일 읽기
