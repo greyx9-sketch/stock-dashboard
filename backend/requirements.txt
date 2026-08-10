@@ -2,3 +2,4 @@
 fastapi              # 웹 서버 프레임워크
 uvicorn[standard]    # FastAPI 를 실제로 구동하는 프로그램
 pydantic-settings    # .env 파일 읽기
+httpx                # 외부 API 호출 (토스증권·OpenDART·SEC). 동기/비동기 모두 지원
