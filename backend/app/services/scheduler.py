@@ -25,8 +25,9 @@ from datetime import datetime, timedelta, timezone
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
+from app.clients.dart import DartError
 from app.clients.krx import KrxError
-from app.services import krx_ingest
+from app.services import dart_corps, krx_ingest
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +60,7 @@ class RunReport:
     trading_days: int = 0
     rows: int = 0
     error: str | None = None
+    corp_rows: int = 0  # 함께 갱신한 DART 고유번호 매핑 건수
 
     @property
     def ok(self) -> bool:
@@ -136,6 +138,14 @@ class KrxScheduler:
         report = RunReport(started_at=datetime.now(KST))
         self._running = True
         try:
+            # DART 고유번호 매핑을 먼저 본다. 오래됐을 때만 실제로 받는다(주 1회).
+            # 여기서 실패해도 확정 종가 수집은 계속해야 하므로 따로 감싼다.
+            try:
+                corp = await dart_corps.sync_corp_codes()
+                report.corp_rows = 0 if corp.skipped else corp.rows
+            except (DartError, RuntimeError) as exc:
+                logger.warning("DART 고유번호 매핑 갱신 실패(계속 진행): %s", exc)
+
             result = await krx_ingest.ingest_recent(scan_days)
             report.trading_days = len(result.trading_days)
             report.rows = result.total_rows

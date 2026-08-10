@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { fetchDailyPrices, fetchStockDetail } from '../lib/api'
 import type { LiveQuote, MarketState, PricePoint, Quote } from '../lib/api'
 import { PriceChart } from './PriceChart'
+import { DisclosureList } from './DisclosureList'
 import {
   changeColor,
   formatBigWon,
@@ -137,6 +138,8 @@ export function StockDetailPanel({ symbol, live, market }: Props) {
         <Field label="거래대금" value={`${formatBigWon(latest.trade_value)}원`} />
         <Field label="시가총액" value={`${formatBigWon(latest.market_cap)}원`} />
       </dl>
+
+      <DisclosureList symbol={symbol} />
     </div>
   )
 }

@@ -130,6 +130,38 @@ export function fetchDailyPrices(symbol: string, days = 90) {
   return get<PricePoint[]>(`/api/stocks/${symbol}/daily?days=${days}`)
 }
 
+export type DisclosureItem = {
+  receipt_no: string
+  report_name: string
+  filer_name: string
+  received_date: string
+  remark: string
+  viewer_url: string
+}
+
+export type DisclosuresResponse = {
+  stock_code: string
+  corp_name: string
+  corp_code: string
+  period_days: number
+  report_type: string | null
+  report_type_label: string | null
+  disclosures: DisclosureItem[]
+}
+
+/** 공시 목록. OpenDART 를 그때그때 부르므로 다른 조회보다 조금 느리다. */
+export function fetchDisclosures(
+  symbol: string,
+  options: { days?: number; count?: number; reportType?: string | null } = {},
+) {
+  const params = new URLSearchParams({
+    days: String(options.days ?? 365),
+    count: String(options.count ?? 20),
+  })
+  if (options.reportType) params.set('report_type', options.reportType)
+  return get<DisclosuresResponse>(`/api/stocks/${symbol}/disclosures?${params}`)
+}
+
 /** 현재가. 서버가 미리 받아 둔 값을 읽어 오므로 이 호출 자체는 외부 API 를 기다리지 않는다. */
 export function fetchLivePrices(symbols: string[]) {
   return get<PricesResponse>(`/api/prices?symbols=${symbols.join(',')}`)

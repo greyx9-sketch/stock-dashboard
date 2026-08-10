@@ -1,0 +1,43 @@
+"""DART 고유번호 매핑 테이블.
+
+OpenDART 는 종목코드로 조회할 수 없고 자체 고유번호(corp_code)를 쓴다. 그 매핑을
+한 번 받아 두고 쓰기 위한 표다.
+
+전체 매핑을 받는 호출은 3.5MB ZIP 을 내려받는 무거운 작업이고, 매핑 자체는 신규 상장·
+상호 변경이 있을 때만 바뀐다. 그래서 조회할 때마다 받지 않고 여기에 넣어 두고 주기적으로만
+갱신한다.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+
+from sqlalchemy import DateTime, Index, String
+from sqlalchemy.orm import Mapped, mapped_column
+
+from app.models.base import Base
+
+
+class DartCorp(Base):
+    """상장사 하나의 종목코드 ↔ DART 고유번호 매핑."""
+
+    __tablename__ = "dart_corps"
+
+    # 이 프로젝트는 항상 종목코드에서 출발하므로 그것을 기본키로 둔다.
+    stock_code: Mapped[str] = mapped_column(String(6), primary_key=True)
+
+    corp_code: Mapped[str] = mapped_column(String(8))  # DART 고유번호 8자리
+    corp_name: Mapped[str] = mapped_column(String(120))
+    modify_date: Mapped[str] = mapped_column(String(8))  # DART 가 알려주는 최종 변경일
+
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    __table_args__ = (
+        # 공시 응답에는 corp_code 만 들어 있어 역방향 조회가 필요할 때가 있다.
+        Index("ix_dart_corps_corp_code", "corp_code"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<DartCorp {self.stock_code} {self.corp_name} ({self.corp_code})>"
