@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     toss_client_id: str | None = None
     toss_client_secret: str | None = None
 
+    # 공공데이터포털 — KRX 공식 확정 종가 (2단계)
+    # 계정당 인증키 하나가 신청한 모든 API 에 공통으로 쓰인다.
+    data_go_kr_api_key: str | None = None
+
     # OpenDART — 국내 공시·재무
     dart_api_key: str | None = None
 

@@ -24,6 +24,7 @@ from typing import Any
 
 import httpx
 
+from app.clients.ratelimit import TokenBucket
 from app.config import get_settings
 
 BASE_URL = "https://openapi.tossinvest.com"
@@ -70,34 +71,6 @@ class BasePrice:
     value: Decimal
     trade_date: str
     source: str
-
-
-class TokenBucket:
-    """초당 요청 수를 지키기 위한 토큰 버킷.
-
-    호출 전에 토큰 하나를 소비한다. 없으면 채워질 때까지 기다린다.
-    락을 잡은 채로 기다리므로 대기 순서가 뒤섞이지 않는다.
-    """
-
-    def __init__(self, rate_per_sec: float):
-        self._rate = rate_per_sec
-        self._capacity = rate_per_sec
-        self._tokens = rate_per_sec
-        self._updated = time.monotonic()
-        self._lock = asyncio.Lock()
-
-    async def acquire(self) -> None:
-        async with self._lock:
-            now = time.monotonic()
-            self._tokens = min(self._capacity, self._tokens + (now - self._updated) * self._rate)
-            self._updated = now
-
-            if self._tokens < 1:
-                await asyncio.sleep((1 - self._tokens) / self._rate)
-                self._tokens = 0
-                self._updated = time.monotonic()
-            else:
-                self._tokens -= 1
 
 
 class TossClient:
