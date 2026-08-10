@@ -40,17 +40,17 @@ def format_change(diff: Decimal, rate: Decimal, currency: str) -> str:
     return f"{sign}{diff:,.2f} ({sign}{rate:.2f}%)"
 
 
-def format_time(raw: str | None, currency: str) -> str:
-    """API 가 준 시각 문자열을 읽기 좋게. 국내 종목은 KST 로 맞춰 보여준다."""
+def format_time(raw: str | None) -> str:
+    """API 가 준 시각을 KST 로 맞춰 보여준다. 미국 종목도 한국 시각으로 통일한다."""
     if not raw:
         return "체결 없음"
     try:
         parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
     except ValueError:
         return raw
-    if currency == "KRW" and parsed.tzinfo is not None:
-        return parsed.astimezone(KST).strftime("%Y-%m-%d %H:%M:%S KST")
-    return parsed.strftime("%Y-%m-%d %H:%M:%S %Z").strip()
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone(KST)
+    return parsed.strftime("%Y-%m-%d %H:%M:%S KST")
 
 
 async def show(symbol: str) -> int:
@@ -77,20 +77,18 @@ async def show(symbol: str) -> int:
         print(f"종목명   {name} ({price['symbol']}, {market})")
         print(f"현재가   {format_price(last_price, currency)}")
 
-        # 최근 일봉 2개 = [당일(또는 최근 거래일), 그 직전 거래일].
-        # 순서를 믿지 않고 시각 기준으로 정렬한 뒤 두 번째 것을 기준가로 쓴다.
-        candles = await toss.get_candles(symbol, interval="1d", count=2)
-        candles = sorted(candles, key=lambda c: c["timestamp"], reverse=True)
+        # 기준가는 토스가 계산한 공식 값을 우선 쓴다. 거래대금 상위 100 종목만 덮으므로
+        # 없으면 일봉 종가로 대신하고, 어느 기준인지 화면에 밝힌다.
+        market = "KR" if currency == "KRW" else "US"
+        base = await toss.find_official_base_price(symbol, market_country=market)
+        if base is None:
+            base = await toss.get_base_price(symbol)
 
-        if len(candles) >= 2:
-            base = Decimal(str(candles[1]["closePrice"]))
-            diff = last_price - base
-            rate = (diff / base * 100) if base else Decimal(0)
-            print(f"전일대비 {format_change(diff, rate, currency)}")
-        else:
-            print("전일대비 -- (전일 종가를 가져오지 못했습니다)")
-
-        print(f"기준시각 {format_time(price.get('timestamp'), currency)}")
+        diff = last_price - base.value
+        rate = (diff / base.value * 100) if base.value else Decimal(0)
+        print(f"전일대비 {format_change(diff, rate, currency)}")
+        print(f"기준시각 {format_time(price.get('timestamp'))}")
+        print(f"기준가   {format_price(base.value, currency)}  ← {base.source}")
         print()
         return 0
 

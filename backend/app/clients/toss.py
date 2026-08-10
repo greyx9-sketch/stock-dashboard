@@ -18,6 +18,8 @@ from __future__ import annotations
 import asyncio
 import random
 import time
+from dataclasses import dataclass
+from decimal import Decimal
 from typing import Any
 
 import httpx
@@ -55,6 +57,19 @@ class TossError(Exception):
         super().__init__(message)
         self.status = status
         self.code = code
+
+
+@dataclass(frozen=True)
+class BasePrice:
+    """등락률의 기준가. 어느 날 값을 어디서 가져왔는지까지 같이 들고 다닌다.
+
+    출처를 붙이는 이유: 토스는 일봉 종가와 시세 화면의 기준가가 서로 다르다.
+    나중에 숫자가 이상해 보일 때 어느 쪽을 쓴 것인지 바로 알 수 있어야 한다.
+    """
+
+    value: Decimal
+    trade_date: str
+    source: str
 
 
 class TokenBucket:
@@ -259,14 +274,90 @@ class TossClient:
         *,
         interval: str = "1d",
         count: int = 100,
+        before: str | None = None,
     ) -> list[dict[str, Any]]:
-        """캔들(OHLCV) 조회. interval 은 '1m' 또는 '1d', 한 번에 최대 200 봉."""
+        """캔들(OHLCV) 조회. interval 은 '1m' 또는 '1d', 한 번에 최대 200 봉.
+
+        `before` 는 페이지네이션 상한(inclusive)이다. 이 시각과 같거나 이전인 봉만 돌아온다.
+        """
+        params: dict[str, Any] = {"symbol": symbol, "interval": interval, "count": count}
+        if before:
+            params["before"] = before
         result = await self._request(
-            "/api/v1/candles",
-            group="MARKET_DATA_CHART",
-            params={"symbol": symbol, "interval": interval, "count": count},
+            "/api/v1/candles", group="MARKET_DATA_CHART", params=params
         )
         # 페이지 응답이라 캔들 목록이 한 겹 안에 들어 있다.
         if isinstance(result, dict):
             return result.get("candles", [])
         return result or []
+
+    async def get_rankings(
+        self,
+        *,
+        ranking_type: str = "MARKET_TRADING_AMOUNT",
+        market_country: str = "KR",
+        duration: str = "1d",
+        count: int = 100,
+    ) -> dict[str, Any]:
+        """랭킹 조회.
+
+        이 API 만 토스가 계산한 **기준가(basePrice)와 등락률(changeRate)** 을 직접 내려준다.
+        다른 시세 API 에는 기준가가 없다. 거래대금 상위 100 종목까지만 덮는다.
+        """
+        return await self._request(
+            "/api/v1/rankings",
+            group="RANKING",
+            params={
+                "type": ranking_type,
+                "marketCountry": market_country,
+                "duration": duration,
+                "count": count,
+            },
+        )
+
+    async def find_official_base_price(
+        self, symbol: str, *, market_country: str = "KR"
+    ) -> BasePrice | None:
+        """토스가 계산한 공식 기준가를 랭킹에서 찾는다. 없으면 None.
+
+        거래대금 상위 100 종목만 덮으므로 실패가 정상이다. 찾은 경우에는 토스 앱 화면과
+        숫자가 정확히 일치한다.
+        """
+        data = await self.get_rankings(market_country=market_country, count=100)
+        for row in data.get("rankings", []):
+            if row["symbol"] == symbol:
+                return BasePrice(
+                    value=Decimal(str(row["price"]["basePrice"])),
+                    trade_date=(data.get("rankedAt") or "")[:10],
+                    source="토스 공식 기준가(앱 화면과 동일)",
+                )
+        return None
+
+    async def get_base_price(self, symbol: str) -> BasePrice:
+        """등락률의 기준가를 구한다.
+
+        **주의: 이 값은 토스 앱 화면의 기준가와 다를 수 있다.**
+
+        토스 시세 API 에는 기준가 필드가 없어서 직전 거래일 일봉 종가를 쓴다. 그런데
+        토스의 일봉 종가는 정규장 종가가 아니라 **시간외(20:00)까지 포함한 마지막 체결가**라,
+        토스가 랭킹 API 로 내려주는 공식 기준가와 어긋난다. 삼성전자 2026-08-07 을 예로 들면
+        일봉 종가는 235,000 이지만 토스 기준가는 231,000 이다.
+
+        16:00 시간외종가 봉, 15:30 봉, 상/하한가 중간값으로 공식 기준가를 되살려 보려 했으나
+        상위 30 종목 검증에서 전부 실패했다. 캔들에 KRX 와 NXT 체결이 섞여 있는 것으로 보인다.
+        정확한 정규장 종가는 KRX 공식 일별시세(공공데이터포털)로 따로 받아 채운다.
+
+        그래서 값과 함께 `source` 를 반드시 들고 다닌다. 화면에 어느 기준인지 밝히기 위해서다.
+        """
+        # 일봉의 시각이 곧 거래일이다. 휴장일을 따로 계산할 필요가 없다.
+        days = await self.get_candles(symbol, interval="1d", count=3)
+        days.sort(key=lambda c: c["timestamp"], reverse=True)
+        if len(days) < 2:
+            raise TossError(f"{symbol} 의 직전 거래일 종가를 구할 수 없습니다(일봉 부족).")
+
+        previous = days[1]
+        return BasePrice(
+            value=Decimal(str(previous["closePrice"])),
+            trade_date=previous["timestamp"][:10],
+            source="토스 일봉 종가(시간외 포함) — 앱 화면과 다를 수 있음",
+        )
