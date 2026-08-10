@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { fetchDailyPrices, fetchStockDetail } from '../lib/api'
-import type { PricePoint, StockDetail } from '../lib/api'
+import type { LiveQuote, MarketState, PricePoint, Quote } from '../lib/api'
 import { PriceChart } from './PriceChart'
 import {
   changeColor,
@@ -14,12 +14,15 @@ import {
 
 type Props = {
   symbol: string
+  /** 목록과 같은 폴링에서 나온 현재가. 상세 화면이 따로 토스를 부르지 않는다. */
+  live: LiveQuote | undefined
+  market: MarketState | null
 }
 
 const CHART_DAYS = 90
 
-export function StockDetailPanel({ symbol }: Props) {
-  const [detail, setDetail] = useState<StockDetail | null>(null)
+export function StockDetailPanel({ symbol, live, market }: Props) {
+  const [latest, setLatest] = useState<Quote | null>(null)
   const [points, setPoints] = useState<PricePoint[]>([])
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -30,9 +33,9 @@ export function StockDetailPanel({ symbol }: Props) {
     setError(null)
 
     Promise.all([fetchStockDetail(symbol), fetchDailyPrices(symbol, CHART_DAYS)])
-      .then(([detailResult, pointsResult]) => {
+      .then(([quote, pointsResult]) => {
         if (cancelled) return
-        setDetail(detailResult)
+        setLatest(quote)
         setPoints(pointsResult)
       })
       .catch((err: Error) => {
@@ -48,7 +51,7 @@ export function StockDetailPanel({ symbol }: Props) {
     }
   }, [symbol])
 
-  if (loading && !detail) {
+  if (loading && !latest) {
     return <div className="p-6 text-sm text-neutral-500">불러오는 중…</div>
   }
 
@@ -60,42 +63,52 @@ export function StockDetailPanel({ symbol }: Props) {
     )
   }
 
-  if (!detail) return null
-
-  const { latest, live, live_error } = detail
+  if (!latest) return null
 
   return (
     <div className="space-y-4">
-      <div>
-        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-          <h2 className="text-xl font-semibold">{latest.name}</h2>
-          <span className="tabular text-sm text-neutral-500">
-            {latest.symbol} · {latest.market}
-          </span>
-        </div>
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <h2 className="text-xl font-semibold">{latest.name}</h2>
+        <span className="tabular text-sm text-neutral-500">
+          {latest.symbol} · {latest.market}
+        </span>
       </div>
 
-      {/* 현재가와 확정 종가를 나란히 둔다. 둘의 기준 시점이 다르다는 것을 화면에서 드러내는 게 중요하다. */}
+      {/* 현재가와 확정 종가를 나란히 둔다. 둘의 기준 시점이 다르다는 것을 화면에서 드러낸다. */}
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="rounded-lg border border-neutral-800 bg-neutral-900/40 p-4">
-          <div className="text-xs text-neutral-400">현재가 (토스증권)</div>
+          <div className="flex items-center gap-1.5 text-xs text-neutral-400">
+            현재가
+            {market?.is_live && <span className="size-1.5 rounded-full bg-emerald-400 animate-pulse" />}
+          </div>
           {live ? (
             <>
               <div className="tabular mt-1 text-2xl font-semibold">
                 {formatWon(Number(live.last_price))}
                 <span className="ml-1 text-base font-normal text-neutral-400">원</span>
               </div>
-              <div className={`tabular mt-1 text-sm ${changeColor(live.change_rate)}`}>
-                {formatChange(live.change)} ({formatRate(live.change_rate)})
+              <div
+                className={`tabular mt-1 text-sm ${
+                  live.change_rate ? changeColor(live.change_rate) : 'text-neutral-500'
+                }`}
+              >
+                {live.change !== null && live.change_rate !== null
+                  ? `${formatChange(live.change)} (${formatRate(live.change_rate)})`
+                  : '기준가 없음'}
               </div>
+              {/* 기준가가 어느 날 종가인지 반드시 밝힌다. 확정 종가는 하루 늦게 올라오므로
+                  "어제 대비"가 아니라 "그저께 대비"인 구간이 매일 생긴다. */}
               <div className="mt-2 text-xs text-neutral-500">
-                기준가 {formatWon(Number(live.base_price))}원 · {formatTimestamp(live.timestamp)}
+                {market?.label ?? ''} · 체결 {formatTimestamp(live.timestamp)}
               </div>
+              {live.base_date && (
+                <div className="text-xs text-neutral-500">
+                  {live.base_date} 종가 {formatWon(Number(live.base_price))}원 대비
+                </div>
+              )}
             </>
           ) : (
-            <div className="mt-2 text-sm text-neutral-500">
-              {live_error ?? '현재가를 가져오지 못했습니다.'}
-            </div>
+            <div className="mt-2 text-sm text-neutral-500">현재가를 받는 중…</div>
           )}
         </div>
 
@@ -108,7 +121,9 @@ export function StockDetailPanel({ symbol }: Props) {
           <div className={`tabular mt-1 text-sm ${changeColor(latest.change_rate)}`}>
             {formatChange(latest.change)} ({formatRate(latest.change_rate)})
           </div>
-          <div className="mt-2 text-xs text-neutral-500">정규장 종가 · 시간외 제외</div>
+          <div className="mt-2 text-xs text-neutral-500">
+            정규장 종가 · 시간외 제외 · 현재가의 기준가
+          </div>
         </div>
       </div>
 

@@ -16,7 +16,6 @@ from fastapi import APIRouter, HTTPException, Path, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
-from app.clients.toss import TossClient, TossError
 from app.models.base import get_session
 from app.models.quote import KrxDailyQuote
 
@@ -63,28 +62,6 @@ class PricePoint(BaseModel):
     low: int
     volume: int
     change_rate: Decimal
-
-
-class LivePrice(BaseModel):
-    """토스증권에서 받은 현재가. 장중에만 의미가 있다."""
-
-    last_price: Decimal = Field(description="현재가 (원)")
-    change: Decimal = Field(description="기준가 대비 (원)")
-    change_rate: Decimal = Field(description="등락률 (%)")
-    base_price: Decimal = Field(description="기준가 — KRX 직전 거래일 확정 종가")
-    timestamp: str | None = Field(default=None, description="체결 시각")
-
-
-class StockDetail(BaseModel):
-    """종목 상세. 확정 종가는 항상 있고, 현재가는 못 가져올 수 있다."""
-
-    latest: QuoteOut = Field(description="가장 최근 확정 시세")
-    live: LivePrice | None = Field(
-        default=None, description="토스증권 현재가. 장 종료 후나 호출 실패 시 없을 수 있다"
-    )
-    live_error: str | None = Field(
-        default=None, description="현재가를 못 가져온 이유. 있으면 화면에 밝힌다"
-    )
 
 
 def _to_quote_out(row: KrxDailyQuote) -> QuoteOut:
@@ -164,14 +141,15 @@ def search_stocks(
         return [_to_quote_out(row) for row in session.execute(stmt).scalars()]
 
 
-@router.get("/{symbol}", summary="종목 상세")
-async def get_stock(
+@router.get("/{symbol}", summary="종목 상세 (확정 시세)")
+def get_stock(
     symbol: str = Path(description="단축코드 6자리 (예: 005930)", pattern=r"^\d{6}$"),
-) -> StockDetail:
-    """확정 종가와 현재가를 함께 돌려준다.
+) -> QuoteOut:
+    """이 종목의 가장 최근 확정 시세.
 
-    현재가는 토스증권을 그때그때 호출해 가져온다. 실패해도 확정 종가는 그대로 내려주고
-    실패 사유만 `live_error` 에 담는다. 외부 API 하나가 죽었다고 화면 전체가 비면 안 된다.
+    현재가는 여기서 주지 않는다. `/api/prices` 가 폴러 캐시에서 준다.
+    토스를 부르는 곳을 폴러 한 군데로 모아 두어야 호출 한도를 한 곳에서 통제할 수 있고,
+    화면이 종목을 바꿀 때마다 외부 API 를 기다리는 일도 없어진다.
     """
     with get_session() as session:
         row = session.execute(
@@ -187,30 +165,7 @@ async def get_stock(
             detail=f"'{symbol}' 종목의 시세가 DB 에 없습니다. 코드 6자리를 확인해 주세요.",
         )
 
-    latest = _to_quote_out(row)
-    live: LivePrice | None = None
-    live_error: str | None = None
-
-    try:
-        async with TossClient() as toss:
-            prices = await toss.get_prices([symbol])
-        if prices:
-            last = Decimal(str(prices[0]["lastPrice"]))
-            base = Decimal(row.close)  # 기준가는 KRX 확정 종가를 쓴다. 이게 이번 단계의 핵심이다.
-            diff = last - base
-            live = LivePrice(
-                last_price=last,
-                change=diff,
-                change_rate=(diff / base * 100).quantize(Decimal("0.01")) if base else Decimal(0),
-                base_price=base,
-                timestamp=prices[0].get("timestamp"),
-            )
-        else:
-            live_error = "토스증권이 이 종목의 현재가를 돌려주지 않았습니다."
-    except (TossError, RuntimeError) as exc:
-        live_error = str(exc)
-
-    return StockDetail(latest=latest, live=live, live_error=live_error)
+    return _to_quote_out(row)
 
 
 @router.get("/{symbol}/daily", summary="종목 일별 시세 (차트용)")

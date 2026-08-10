@@ -1,8 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { fetchStatus, fetchStocks, searchStocks } from './lib/api'
 import type { DataStatus, MarketFilter, Quote, SortKey } from './lib/api'
+import { useLivePrices } from './lib/useLivePrices'
 import { StockTable } from './components/StockTable'
 import { StockDetailPanel } from './components/StockDetailPanel'
+import { MarketBadge } from './components/MarketBadge'
 
 const SORT_OPTIONS: { key: SortKey; label: string }[] = [
   { key: 'market_cap', label: '시가총액' },
@@ -70,10 +72,22 @@ export default function App() {
     }
   }, [sort, market, keyword])
 
+  // 화면에 떠 있는 종목만 현재가를 받는다. 선택한 종목은 목록 밖일 수 있으니 같이 넣는다.
+  const watchedSymbols = useMemo(() => {
+    const symbols = stocks.map((s) => s.symbol)
+    if (selected && !symbols.includes(selected)) symbols.push(selected)
+    return symbols
+  }, [stocks, selected])
+
+  const livePrices = useLivePrices(watchedSymbols)
+
   return (
     <div className="mx-auto max-w-7xl px-4 py-6">
       <header className="mb-6">
-        <h1 className="text-2xl font-semibold">국내 주식 시세</h1>
+        <div className="flex flex-wrap items-center gap-3">
+          <h1 className="text-2xl font-semibold">국내 주식 시세</h1>
+          <MarketBadge market={livePrices.market} error={livePrices.error} />
+        </div>
         <p className="mt-1 text-sm text-neutral-400">
           {status?.latest_trade_date ? (
             <>
@@ -140,8 +154,21 @@ export default function App() {
       )}
 
       <div className="grid gap-6 lg:grid-cols-[1fr_420px]">
-        <StockTable stocks={stocks} selectedSymbol={selected} onSelect={setSelected} />
-        <aside>{selected && <StockDetailPanel symbol={selected} />}</aside>
+        <StockTable
+          stocks={stocks}
+          live={livePrices.bySymbol}
+          selectedSymbol={selected}
+          onSelect={setSelected}
+        />
+        <aside>
+          {selected && (
+            <StockDetailPanel
+              symbol={selected}
+              live={livePrices.bySymbol.get(selected)}
+              market={livePrices.market}
+            />
+          )}
+        </aside>
       </div>
 
       {status && (

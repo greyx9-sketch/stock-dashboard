@@ -11,7 +11,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.models.base import init_db
-from app.routers import meta, stocks
+from app.routers import meta, prices, stocks
+from app.services.price_poller import poller
 
 # 개발 중 프론트엔드(Vite)가 뜨는 주소. 배포할 때는 같은 도메인에서 서비스하므로 필요 없어진다.
 DEV_FRONTEND_ORIGINS = [
@@ -22,9 +23,17 @@ DEV_FRONTEND_ORIGINS = [
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """서버가 뜰 때 DB 테이블이 있는지 확인한다. 없으면 만든다."""
+    """서버가 뜨고 질 때 할 일.
+
+    현재가 폴러는 서버가 사는 동안 계속 도는 백그라운드 작업이다. 여기서 하나만 띄운다.
+    여러 개를 띄우면 토스 토큰이 서로를 무효화한다(토큰은 client 당 1개만 유효).
+    """
     init_db()
-    yield
+    await poller.start()
+    try:
+        yield
+    finally:
+        await poller.stop()
 
 
 app = FastAPI(
@@ -43,6 +52,7 @@ app.add_middleware(
 )
 
 app.include_router(stocks.router)
+app.include_router(prices.router)
 app.include_router(meta.router)
 
 

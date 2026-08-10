@@ -264,6 +264,17 @@ class TossClient:
             return result.get("candles", [])
         return result or []
 
+    async def get_market_calendar_kr(self, day: str | None = None) -> dict[str, Any]:
+        """국내 장 운영 시간 조회. 전일·당일·익일 3영업일 정보가 돌아온다.
+
+        폴링 주기를 정하는 근거로 쓴다. 장이 닫혀 있는데 5초마다 현재가를 부르는 것은
+        호출 한도만 태우는 짓이다.
+
+        휴장일이면 해당 날짜의 `integrated` 가 null 이다. 공휴일표를 직접 관리할 필요가 없다.
+        """
+        return await self._request("/api/v1/market-calendar/KR", group="MARKET_INFO",
+                                   params={"date": day} if day else None)
+
     async def get_rankings(
         self,
         *,

@@ -29,20 +29,6 @@ export type PricePoint = {
   change_rate: string
 }
 
-export type LivePrice = {
-  last_price: string
-  change: string
-  change_rate: string
-  base_price: string
-  timestamp: string | null
-}
-
-export type StockDetail = {
-  latest: Quote
-  live: LivePrice | null
-  live_error: string | null
-}
-
 export type DataStatus = {
   latest_trade_date: string | null
   oldest_trade_date: string | null
@@ -51,6 +37,37 @@ export type DataStatus = {
   total_rows: number
   source: string
   note: string
+}
+
+export type MarketPhase = 'PRE' | 'REGULAR' | 'AFTER' | 'CLOSED' | 'HOLIDAY' | 'UNKNOWN'
+
+export type MarketState = {
+  phase: MarketPhase
+  label: string
+  trade_date: string | null
+  next_open: string | null
+  session_end: string | null
+  is_live: boolean
+}
+
+export type LiveQuote = {
+  symbol: string
+  last_price: string
+  base_price: string | null
+  base_date: string | null
+  change: string | null
+  change_rate: string | null
+  timestamp: string | null
+  age_seconds: number
+  stale: boolean
+}
+
+export type PricesResponse = {
+  market: MarketState
+  prices: LiveQuote[]
+  missing: string[]
+  error: string | null
+  last_success_at: string | null
 }
 
 export type SortKey = 'market_cap' | 'trade_value' | 'volume' | 'change_rate' | 'close'
@@ -93,10 +110,16 @@ export function searchStocks(keyword: string) {
   return get<Quote[]>(`/api/stocks/search?q=${encodeURIComponent(keyword)}`)
 }
 
+/** 종목의 가장 최근 확정 시세. 현재가는 fetchLivePrices 가 따로 준다. */
 export function fetchStockDetail(symbol: string) {
-  return get<StockDetail>(`/api/stocks/${symbol}`)
+  return get<Quote>(`/api/stocks/${symbol}`)
 }
 
 export function fetchDailyPrices(symbol: string, days = 90) {
   return get<PricePoint[]>(`/api/stocks/${symbol}/daily?days=${days}`)
+}
+
+/** 현재가. 서버가 미리 받아 둔 값을 읽어 오므로 이 호출 자체는 외부 API 를 기다리지 않는다. */
+export function fetchLivePrices(symbols: string[]) {
+  return get<PricesResponse>(`/api/prices?symbols=${symbols.join(',')}`)
 }
