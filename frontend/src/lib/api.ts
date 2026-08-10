@@ -29,7 +29,18 @@ export type PricePoint = {
   change_rate: string
 }
 
+export type CollectionStatus = {
+  next_run_at: string | null
+  running: boolean
+  last_run_at: string | null
+  last_run_ok: boolean | null
+  last_run_days: number
+  last_run_rows: number
+  last_error: string | null
+}
+
 export type DataStatus = {
+  collection: CollectionStatus
   latest_trade_date: string | null
   oldest_trade_date: string | null
   trading_days: number

@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 
@@ -150,7 +151,10 @@ async def ingest_days(days: list[date], *, skip_stored: bool = True) -> IngestRe
     async with KrxClient() as krx:
         for day in targets:
             quotes = await krx.get_quotes_for_date(day)
-            results.append(DayResult(day=day, rows=save_quotes(quotes)))
+            # 2,900 행 upsert 는 동기 작업이라 그대로 실행하면 그동안 이벤트 루프가 멈춘다.
+            # 스케줄러가 이걸 돌리는 동안 현재가 폴러와 화면 응답이 같이 멎으면 안 된다.
+            rows = await asyncio.to_thread(save_quotes, quotes)
+            results.append(DayResult(day=day, rows=rows))
 
     return IngestResult(days=results)
 

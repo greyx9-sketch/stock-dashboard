@@ -13,6 +13,7 @@ from app.config import get_settings
 from app.models.base import init_db
 from app.routers import meta, prices, stocks
 from app.services.price_poller import poller
+from app.services.scheduler import scheduler
 
 # 개발 중 프론트엔드(Vite)가 뜨는 주소. 배포할 때는 같은 도메인에서 서비스하므로 필요 없어진다.
 DEV_FRONTEND_ORIGINS = [
@@ -27,12 +28,17 @@ async def lifespan(app: FastAPI):
 
     현재가 폴러는 서버가 사는 동안 계속 도는 백그라운드 작업이다. 여기서 하나만 띄운다.
     여러 개를 띄우면 토스 토큰이 서로를 무효화한다(토큰은 client 당 1개만 유효).
+
+    스케줄러는 확정 종가를 매일 자동으로 받아 온다. 기동 직후에는 꺼져 있던 동안 빠진
+    날짜를 따라잡는다.
     """
     init_db()
     await poller.start()
+    scheduler.start()
     try:
         yield
     finally:
+        scheduler.shutdown()
         await poller.stop()
 
 

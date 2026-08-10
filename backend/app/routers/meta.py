@@ -12,8 +12,21 @@ from sqlalchemy import func, select
 
 from app.models.base import get_session
 from app.models.quote import KrxDailyQuote
+from app.services.scheduler import scheduler
 
 router = APIRouter(prefix="/api/meta", tags=["데이터 현황"])
+
+
+class CollectionStatus(BaseModel):
+    """확정 종가 자동 수집이 어떻게 돌고 있는지."""
+
+    next_run_at: str | None = Field(description="다음 자동 수집 예정 시각")
+    running: bool = Field(description="지금 수집 중인가")
+    last_run_at: str | None = Field(description="마지막 수집 시각")
+    last_run_ok: bool | None = Field(description="마지막 수집이 성공했는가. 아직 없으면 없음")
+    last_run_days: int = Field(description="마지막 수집이 새로 채운 거래일 수")
+    last_run_rows: int = Field(description="마지막 수집이 저장한 행 수")
+    last_error: str | None = Field(description="마지막 수집이 실패한 이유")
 
 
 class DataStatus(BaseModel):
@@ -26,6 +39,7 @@ class DataStatus(BaseModel):
     total_rows: int = Field(description="저장된 전체 행 수")
     source: str = Field(description="데이터 출처")
     note: str = Field(description="이 데이터의 시간 특성에 대한 안내")
+    collection: CollectionStatus = Field(description="자동 수집 상태")
 
 
 @router.get("", summary="데이터 현황")
@@ -46,7 +60,19 @@ def get_status() -> DataStatus:
             else 0
         )
 
+    last = scheduler.last_run
+    next_run = scheduler.next_run_at
+
     return DataStatus(
+        collection=CollectionStatus(
+            next_run_at=next_run.isoformat() if next_run else None,
+            running=scheduler.is_running,
+            last_run_at=last.started_at.isoformat() if last else None,
+            last_run_ok=last.ok if last else None,
+            last_run_days=last.trading_days if last else 0,
+            last_run_rows=last.rows if last else 0,
+            last_error=last.error if last else None,
+        ),
         latest_trade_date=latest,
         oldest_trade_date=oldest,
         trading_days=trading_days,
