@@ -1,0 +1,22 @@
+@import "tailwindcss";
+
+/* 국내 증권 화면 관례: 상승은 빨강, 하락은 파랑. 미국식(상승 초록)과 반대다.
+   두 색을 이름으로 묶어 두면 화면 어디서든 같은 의미로 쓰인다. */
+@theme {
+  --color-up: oklch(0.62 0.22 25);
+  --color-down: oklch(0.58 0.18 255);
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  @apply bg-neutral-950 text-neutral-100 antialiased;
+  font-feature-settings: "tnum";
+}
+
+/* 숫자가 세로로 흔들리지 않도록 표 안의 수치는 고정폭 숫자를 쓴다. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}

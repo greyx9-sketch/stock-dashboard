@@ -26,3 +26,6 @@ dist/
 .idea/
 Thumbs.db
 .DS_Store
+
+# Playwright 로 화면을 확인할 때 생기는 임시 파일
+.playwright-mcp/
