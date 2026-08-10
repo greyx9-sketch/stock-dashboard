@@ -135,6 +135,16 @@ class KrxClient:
 
     async def _request(self, path: str, params: dict[str, Any]) -> list[dict[str, str]]:
         """GET 요청 하나. 응답 봉투를 벗겨 item 목록만 돌려준다."""
+        _, rows = await self._request_page(path, params)
+        return rows
+
+    async def _request_page(
+        self, path: str, params: dict[str, Any]
+    ) -> tuple[int, list[dict[str, str]]]:
+        """GET 요청 하나. (전체 건수, item 목록) 을 돌려준다.
+
+        페이지를 넘기려면 전체 건수가 필요해서 `_request` 와 나눠 두었다.
+        """
         await self._bucket.acquire()
         response = await self._http.get(
             path,
@@ -159,12 +169,15 @@ class KrxClient:
             hint = ERROR_HINTS.get(str(code), header.get("resultMsg", "알 수 없는 오류"))
             raise KrxError(f"공공데이터포털이 오류를 돌려줬습니다(코드 {code}).\n  {hint}", code=str(code))
 
+        body = payload.get("response", {}).get("body", {}) or {}
+        total = int(body.get("totalCount") or 0)
+
         # 결과가 없으면 items 가 빈 문자열로 온다. 이 API 의 오래된 관행이다.
-        items = payload.get("response", {}).get("body", {}).get("items") or {}
+        items = body.get("items") or {}
         if not isinstance(items, dict):
-            return []
+            return total, []
         rows = items.get("item") or []
-        return rows if isinstance(rows, list) else [rows]
+        return total, (rows if isinstance(rows, list) else [rows])
 
     @staticmethod
     def _describe_xml_error(text: str) -> str:
@@ -229,6 +242,31 @@ class KrxClient:
                 "  상장폐지되었거나 최근 휴장이 길었다면 조회 기간을 늘려야 할 수 있습니다."
             )
         return quotes[0]
+
+    async def get_quotes_for_date(self, day: date) -> list[DailyQuote]:
+        """그날 거래된 **전 종목**의 확정 시세를 돌려준다. 휴장일이면 빈 목록.
+
+        하루치가 약 2,900 종목이고 한 번에 1,000 행까지 받으므로 하루 = 3 호출이다.
+        종목마다 따로 부르면 2,900 호출이 나가 일일 한도(10,000)를 하루 세 번이면 태운다.
+        날짜 단위로 받아서 DB 에 넣는 것이 이 API 를 쓰는 유일하게 온전한 방법이다.
+        """
+        collected: list[dict[str, str]] = []
+        page = 1
+        params = {"basDt": day.strftime("%Y%m%d"), "numOfRows": MAX_ROWS_PER_PAGE}
+
+        while True:
+            total, rows = await self._request_page(
+                "/getStockPriceInfo", {**params, "pageNo": page}
+            )
+            collected.extend(rows)
+            # 마지막 페이지는 요청한 것보다 적게 온다. 그것과 전체 건수 도달을 둘 다 본다.
+            if not rows or len(collected) >= total or len(rows) < MAX_ROWS_PER_PAGE:
+                break
+            page += 1
+            if page > 20:  # 하루 2만 종목은 있을 수 없다. 무한 루프 방지용 안전장치.
+                raise KrxError(f"{day} 조회가 페이지 한도를 넘겼습니다. 응답이 이상합니다.")
+
+        return [self._to_quote(row) for row in collected]
 
     @staticmethod
     def _to_quote(row: dict[str, str]) -> DailyQuote:
