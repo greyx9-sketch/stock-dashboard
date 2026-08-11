@@ -5,11 +5,14 @@
 """
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
-from app.config import get_settings
+from app.config import PROJECT_ROOT, get_settings
 from app.models.base import init_db
 from app.routers import disclosures, financials, meta, prices, stocks, us_stocks
 from app.services.price_poller import poller
@@ -75,12 +78,58 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.get("/", tags=["시스템"])
-def root() -> dict[str, str]:
-    """지금 어느 단계인지 알려주는 임시 안내."""
+# ---------------------------------------------------------------- 화면 서빙
+#
+# 배포하면 이 서버가 화면(빌드된 프론트엔드)까지 함께 내보낸다. 프로세스를 하나만 띄우면
+# 되므로 서버 관리가 단순해지고, 화면과 API 가 같은 주소에서 나오니 CORS 도 필요 없어진다.
+#
+# 개발 중에는 이 폴더가 없다(Vite 개발 서버가 5173 에서 따로 뜬다). 없으면 조용히 건너뛴다.
+FRONTEND_DIST = PROJECT_ROOT / "frontend" / "dist"
+
+
+def _mount_frontend(app: FastAPI) -> None:
+    index_file = FRONTEND_DIST / "index.html"
+    if not index_file.exists():
+        return
+
+    # 해시가 붙은 자산은 내용이 바뀌면 파일명도 바뀐다. 길게 캐시해도 안전하다.
+    app.mount(
+        "/assets", StaticFiles(directory=FRONTEND_DIST / "assets"), name="assets"
+    )
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def serve_spa(full_path: str) -> FileResponse:
+        """화면 파일을 내보낸다.
+
+        API 경로는 위에서 이미 처리됐으므로 여기까지 오면 화면 요청이다. 다만 없는 API 를
+        부른 요청이 여기 흘러와 index.html 을 200 으로 받으면 오류를 알아채기 어렵다.
+        그래서 /api 로 시작하는 것은 404 로 돌려보낸다.
+        """
+        if full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="없는 API 경로입니다.")
+
+        candidate = (FRONTEND_DIST / full_path).resolve()
+        # 경로에 .. 를 섞어 폴더 밖 파일을 요구하는 것을 막는다.
+        if (
+            full_path
+            and candidate.is_file()
+            and candidate.is_relative_to(FRONTEND_DIST.resolve())
+        ):
+            return FileResponse(candidate)
+        return FileResponse(index_file)
+
+
+@app.get("/api", tags=["시스템"], include_in_schema=False)
+def api_root() -> dict[str, str]:
+    """API 가 살아 있는지와 문서 위치를 알려준다."""
     settings = get_settings()
     return {
         "service": "증권 정보 대시보드",
         "env": settings.app_env,
         "docs": "/docs",
     }
+
+
+# 화면 서빙은 반드시 모든 API 라우터를 등록한 뒤에 붙인다. 순서가 뒤바뀌면
+# 포괄 경로(/{full_path})가 API 요청까지 먼저 잡아 버린다.
+_mount_frontend(app)

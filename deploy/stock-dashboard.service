@@ -1,0 +1,47 @@
+# systemd 서비스 파일 — 서버가 재부팅돼도 대시보드가 알아서 다시 뜨게 한다.
+#
+# 서버의 /etc/systemd/system/stock-dashboard.service 자리에 놓는다.
+#
+# 등록:
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now stock-dashboard
+# 상태 확인:
+#   sudo systemctl status stock-dashboard
+#   sudo journalctl -u stock-dashboard -f     ← 실시간 로그
+
+[Unit]
+Description=증권 정보 대시보드
+# 네트워크가 준비된 뒤에 뜨게 한다. 기동 직후 외부 API 를 부르기 때문이다.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=stock
+Group=stock
+WorkingDirectory=/opt/stock/backend
+
+# --host 127.0.0.1 이 중요하다. 바깥에서 8000 포트로 직접 들어올 수 없게 막고,
+# 반드시 Caddy(비밀번호·HTTPS)를 거치게 한다.
+#
+# --workers 1 도 반드시 지켜야 한다. 토스증권 액세스 토큰은 client 당 1개만 유효해서,
+# 프로세스를 여러 개 띄우면 서로의 토큰을 무효화한다. 현재가 폴러와 스케줄러도
+# 하나만 돌아야 한다.
+ExecStart=/opt/stock/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1
+
+# 죽으면 다시 띄운다. 외부 API 장애로 예외가 나도 서버는 계속 살아 있어야 한다.
+Restart=always
+RestartSec=5
+
+# 로그를 journald 로 보낸다. journalctl 로 한곳에서 본다.
+StandardOutput=journal
+StandardError=journal
+
+# 파일 쓰기는 데이터 폴더에만 허용한다. 실수로 다른 곳을 건드리지 못하게 한다.
+ProtectSystem=full
+ProtectHome=true
+NoNewPrivileges=true
+ReadWritePaths=/opt/stock/data
+
+[Install]
+WantedBy=multi-user.target
