@@ -33,6 +33,16 @@ export function formatRate(rate: string | number): string {
   return `${sign}${value.toFixed(2)}%`
 }
 
+/**
+ * 부호를 붙이지 않는 비율. 마진·ROE·부채비율처럼 **변화가 아니라 수준**을 나타내는 값에 쓴다.
+ * 부채비율 "+29.94%" 는 늘었다는 뜻으로 잘못 읽힌다. 음수면 마이너스는 그대로 남긴다.
+ */
+export function formatPercent(rate: string | number): string {
+  const value = typeof rate === 'string' ? Number(rate) : rate
+  if (!Number.isFinite(value)) return '-'
+  return `${value.toFixed(2)}%`
+}
+
 /** 부호를 항상 붙인 금액 변화. */
 export function formatChange(change: string | number): string {
   const value = typeof change === 'string' ? Number(change) : change

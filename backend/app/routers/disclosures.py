@@ -20,6 +20,10 @@ from app.services import dart_corps
 
 router = APIRouter(prefix="/api/stocks", tags=["공시"])
 
+# 공시 유형 목록은 종목에 딸린 값이 아니라 고정 목록이다. `/api/stocks/...` 아래에 두면
+# `/api/stocks/{symbol}` 이 먼저 잡아서 "disclosure-types" 를 종목코드로 해석해 422 가 난다.
+meta_router = APIRouter(prefix="/api", tags=["공시"])
+
 # 같은 종목을 다시 열었을 때 재호출하지 않는 시간(초).
 CACHE_TTL_SEC = 300.0
 
@@ -50,7 +54,7 @@ class DisclosuresOut(BaseModel):
     disclosures: list[DisclosureOut]
 
 
-@router.get("/disclosure-types", summary="공시 유형 목록")
+@meta_router.get("/disclosure-types", summary="공시 유형 목록")
 def list_report_types() -> dict[str, str]:
     """화면의 필터 버튼을 만들 때 쓴다. 코드 → 이름."""
     return REPORT_TYPES

@@ -80,6 +80,14 @@ REPORT_TYPES: dict[str, str] = {
 }
 
 
+# 보고서 종류(reprt_code). 이 프로젝트는 연간 추이를 보므로 사업보고서만 쓴다.
+# 분기·반기는 누적/당분기 구분이 섞여 있어 연간과 같은 방식으로 다룰 수 없다.
+ANNUAL_REPORT = "11011"  # 사업보고서
+HALF_REPORT = "11012"  # 반기보고서
+Q1_REPORT = "11013"  # 1분기보고서
+Q3_REPORT = "11014"  # 3분기보고서
+
+
 class DartError(Exception):
     """OpenDART 호출 실패. 사람이 읽고 다음 행동을 알 수 있는 메시지를 담는다."""
 
@@ -266,6 +274,37 @@ class DartClient:
             received_date=received,
             remark=(row.get("rm") or "").strip(),
         )
+
+    # ------------------------------------------------------------------ 재무제표
+
+    async def get_financial_statements(
+        self,
+        corp_code: str,
+        *,
+        year: int,
+        report_code: str = ANNUAL_REPORT,
+        consolidated: bool = True,
+    ) -> list[dict[str, str]]:
+        """전체 재무제표의 계정 줄들을 그대로 돌려준다. 없으면 빈 목록.
+
+        한 번의 응답에 **3개 연도**가 들어 있다(당기 thstrm / 전기 frmtrm / 전전기 bfefrmtrm).
+        6년치를 보려면 두 번만 부르면 된다는 뜻이라, 호출 수를 아끼는 데 중요하다.
+
+        `consolidated` 는 연결(CFS)/별도(OFS) 구분이다. 종속회사가 없는 회사는 연결이
+        없으므로 호출한 쪽에서 별도로 다시 시도해야 한다.
+        """
+        payload = await self._get_json(
+            "/fnlttSinglAcntAll.json",
+            {
+                "corp_code": corp_code,
+                "bsns_year": str(year),
+                "reprt_code": report_code,
+                "fs_div": "CFS" if consolidated else "OFS",
+            },
+        )
+        if payload is None:
+            return []  # 해당 연도 보고서가 없다. 오류가 아니다.
+        return payload.get("list") or []
 
     # ------------------------------------------------------------------ 기업개황
 

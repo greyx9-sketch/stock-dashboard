@@ -130,6 +130,40 @@ export function fetchDailyPrices(symbol: string, days = 90) {
   return get<PricePoint[]>(`/api/stocks/${symbol}/daily?days=${days}`)
 }
 
+export type FinancialYear = {
+  fiscal_year: number
+  revenue: number | null
+  gross_profit: number | null
+  operating_income: number | null
+  net_income: number | null
+  total_assets: number | null
+  total_liabilities: number | null
+  total_equity: number | null
+  operating_margin: string | null
+  net_margin: string | null
+  revenue_growth: string | null
+  operating_income_growth: string | null
+  roe: string | null
+  debt_ratio: string | null
+  receipt_no: string
+  source_url: string
+}
+
+export type FinancialsResponse = {
+  stock_code: string
+  corp_name: string
+  corp_code: string
+  fs_div: string
+  fs_label: string
+  currency: string
+  years: FinancialYear[]
+}
+
+/** 연간 재무. 처음 보는 종목은 OpenDART 를 부르느라 몇 초 걸릴 수 있다. */
+export function fetchFinancials(symbol: string, years = 6) {
+  return get<FinancialsResponse>(`/api/stocks/${symbol}/financials?years=${years}`)
+}
+
 export type DisclosureItem = {
   receipt_no: string
   report_name: string

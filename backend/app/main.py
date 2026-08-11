@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.models.base import init_db
-from app.routers import disclosures, meta, prices, stocks
+from app.routers import disclosures, financials, meta, prices, stocks
 from app.services.price_poller import poller
 from app.services.scheduler import scheduler
 
@@ -60,6 +60,8 @@ app.add_middleware(
 app.include_router(stocks.router)
 app.include_router(prices.router)
 app.include_router(disclosures.router)
+app.include_router(disclosures.meta_router)
+app.include_router(financials.router)
 app.include_router(meta.router)
 
 
