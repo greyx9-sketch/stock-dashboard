@@ -275,6 +275,15 @@ class TossClient:
         return await self._request("/api/v1/market-calendar/KR", group="MARKET_INFO",
                                    params={"date": day} if day else None)
 
+    async def get_market_calendar_us(self, day: str | None = None) -> dict[str, Any]:
+        """해외(미국) 장 운영 시간 조회.
+
+        국내와 응답 구조가 다르다. 세션이 `integrated` 안이 아니라 최상위에 있고,
+        토스 자체 주간거래인 **데이마켓**(09:00~17:00 KST)이 하나 더 있다.
+        """
+        return await self._request("/api/v1/market-calendar/US", group="MARKET_INFO",
+                                   params={"date": day} if day else None)
+
     async def get_rankings(
         self,
         *,

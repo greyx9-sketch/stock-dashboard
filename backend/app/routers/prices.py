@@ -19,7 +19,7 @@ from sqlalchemy import func, select
 
 from app.models.base import get_session
 from app.models.quote import KrxDailyQuote
-from app.services.price_poller import poller
+from app.services.price_poller import LIVE_PHASES, poller
 
 router = APIRouter(prefix="/api/prices", tags=["현재가"])
 
@@ -33,7 +33,7 @@ STALE_AFTER_SEC = 30.0
 class MarketOut(BaseModel):
     """지금 장이 어떤 상태인지."""
 
-    phase: str = Field(description="PRE / REGULAR / AFTER / CLOSED / HOLIDAY / UNKNOWN")
+    phase: str = Field(description="PRE / REGULAR / AFTER / DAY / CLOSED / HOLIDAY / UNKNOWN")
     label: str = Field(description="화면에 그대로 쓸 한국어 이름")
     trade_date: str | None = Field(description="오늘 날짜. 휴장이면 없음")
     next_open: str | None = Field(description="다음 개장 시각")
@@ -56,7 +56,9 @@ class LivePriceOut(BaseModel):
 
 
 class PricesOut(BaseModel):
-    market: MarketOut
+    # 국내와 미국은 장 시간이 완전히 다르다. 둘 다 내려주고 화면이 보고 있는 쪽을 고른다.
+    # 하나만 주면 한국 애프터마켓(16시)에 미국 화면이 "애프터마켓"으로 뜨는 일이 생긴다.
+    markets: dict[str, MarketOut] = Field(description="시장별 장 상태. 키는 KR / US")
     prices: list[LivePriceOut]
     missing: list[str] = Field(description="아직 받아 오지 못한 종목. 다음 요청에는 채워진다")
     error: str | None = Field(description="폴러가 마지막으로 만난 오류. 있으면 화면에 밝힌다")
@@ -138,18 +140,20 @@ def get_prices(
             )
         )
 
-    market = poller.market
     last_success = poller.last_success_at
 
     return PricesOut(
-        market=MarketOut(
-            phase=market.phase,
-            label=market.label,
-            trade_date=market.trade_date,
-            next_open=market.next_open,
-            session_end=market.session_end,
-            is_live=market.phase in ("PRE", "REGULAR", "AFTER"),
-        ),
+        markets={
+            country: MarketOut(
+                phase=state.phase,
+                label=state.label,
+                trade_date=state.trade_date,
+                next_open=state.next_open,
+                session_end=state.session_end,
+                is_live=state.phase in LIVE_PHASES,
+            )
+            for country, state in poller.markets.items()
+        },
         prices=prices,
         missing=[s for s in wanted if s not in cached],
         error=poller.last_error,

@@ -15,6 +15,7 @@ from fastapi import APIRouter, HTTPException, Path, Query
 from pydantic import BaseModel, Field
 
 from app.clients.sec import SecClient, SecError, UsFiling
+from app.clients.toss import TossClient, TossError
 from app.models.us_company import SecFinancial
 from app.services import sec_companies, sec_financials
 
@@ -23,6 +24,10 @@ router = APIRouter(prefix="/api/us", tags=["미국 주식"])
 # 회사 개요·공시는 SEC 를 그때그때 부른다. 같은 종목을 연달아 열 때만 재호출을 막는다.
 CACHE_TTL_SEC = 300.0
 _submissions_cache: dict[str, tuple[float, dict]] = {}
+
+# 랭킹은 장중에 계속 바뀐다. 짧게만 캐시해 화면을 여러 번 열어도 토스를 반복해서 부르지 않게 한다.
+RANKING_TTL_SEC = 60.0
+_ranking_cache: dict[int, tuple[float, list]] = {}
 
 # 10-K(연차)·10-Q(분기)·8-K(수시)가 실제로 읽을 가치가 있는 공시다.
 # 나머지(폼 4 내부자 거래 등)는 국내 지분공시처럼 목록을 덮어 버린다.
@@ -134,6 +139,88 @@ async def _submissions(cik: str) -> dict:
 
     _submissions_cache[cik] = (now, data)
     return data
+
+
+class UsListItem(BaseModel):
+    """미국 종목 목록 한 줄. 시세는 토스, 이름·구분도 토스에서 온다."""
+
+    symbol: str
+    name: str = Field(description="한글명. 없으면 티커")
+    english_name: str | None
+    market: str | None = Field(description="NASDAQ / NYSE / AMEX")
+    security_type: str | None = Field(description="STOCK / ETF")
+    last_price: Decimal
+    base_price: Decimal = Field(description="기준가 — 토스가 계산한 전일 종가")
+    change: Decimal
+    change_rate: Decimal = Field(description="등락률 (%)")
+    trading_volume: int
+    trading_amount: int = Field(description="거래대금 (원 환산)")
+    currency: str
+
+
+@router.get("/list", summary="미국 종목 목록 (거래대금 상위)")
+async def list_us_stocks(
+    limit: int = Query(50, ge=1, le=100, description="가져올 종목 수"),
+) -> list[UsListItem]:
+    """토스증권 거래대금 상위 랭킹으로 목록을 만든다.
+
+    국내와 달리 KRX 확정 종가 같은 별도 기준가 소스가 없다. 대신 토스 랭킹이 기준가
+    (`basePrice`)를 직접 내려주므로 그것을 그대로 쓴다 — 국내에서 랭킹 기준가가 앱 화면과
+    일치하는 것을 이미 확인했다.
+
+    ETF 가 상위권에 많이 올라온다(SOXL·QQQ 등). 걸러내지 않고 구분만 표시한다 —
+    실제로 거래대금이 큰 것이 사실이고, 감추면 목록이 현실과 달라진다.
+    """
+    now = time.monotonic()
+    cached = _ranking_cache.get(limit)
+    if cached and now - cached[0] < RANKING_TTL_SEC:
+        return cached[1]
+
+    try:
+        async with TossClient() as toss:
+            data = await toss.get_rankings(market_country="US", count=limit)
+            rows = data.get("rankings") or []
+            symbols = [r["symbol"] for r in rows if r.get("symbol")]
+            # 랭킹 응답에는 이름이 없다. 종목 정보를 따로 받아 붙인다.
+            info = {s["symbol"]: s for s in (await toss.get_stocks(symbols) if symbols else [])}
+    except TossError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    items: list[UsListItem] = []
+    for row in rows:
+        symbol = row.get("symbol")
+        price = row.get("price") or {}
+        if not symbol or price.get("lastPrice") is None:
+            continue
+
+        last = Decimal(str(price["lastPrice"]))
+        base = Decimal(str(price.get("basePrice") or last))
+        meta = info.get(symbol, {})
+
+        items.append(
+            UsListItem(
+                symbol=symbol,
+                name=meta.get("name") or symbol,
+                english_name=meta.get("englishName"),
+                market=meta.get("market"),
+                security_type=meta.get("securityType"),
+                last_price=last,
+                base_price=base,
+                change=last - base,
+                # 토스는 등락률을 비율(0.0143)로 준다. 화면은 % 로 쓰므로 여기서 바꾼다.
+                change_rate=(Decimal(str(price.get("changeRate") or 0)) * 100).quantize(
+                    Decimal("0.01")
+                ),
+                trading_volume=int(row.get("tradingVolume") or 0),
+                trading_amount=int(row.get("tradingAmount") or 0),
+                currency=row.get("currency") or "USD",
+            )
+        )
+
+    _ranking_cache[limit] = (now, items)
+    return items
 
 
 @router.get("/search", summary="미국 종목 검색")

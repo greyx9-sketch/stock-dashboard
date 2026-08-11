@@ -50,7 +50,17 @@ export type DataStatus = {
   note: string
 }
 
-export type MarketPhase = 'PRE' | 'REGULAR' | 'AFTER' | 'CLOSED' | 'HOLIDAY' | 'UNKNOWN'
+export type MarketPhase =
+  | 'PRE'
+  | 'REGULAR'
+  | 'AFTER'
+  | 'DAY'
+  | 'CLOSED'
+  | 'HOLIDAY'
+  | 'UNKNOWN'
+
+/** 국내와 미국은 장 시간이 달라 상태를 따로 본다. */
+export type Country = 'KR' | 'US'
 
 export type MarketState = {
   phase: MarketPhase
@@ -74,7 +84,7 @@ export type LiveQuote = {
 }
 
 export type PricesResponse = {
-  market: MarketState
+  markets: Record<Country, MarketState>
   prices: LiveQuote[]
   missing: string[]
   error: string | null
@@ -162,6 +172,93 @@ export type FinancialsResponse = {
 /** 연간 재무. 처음 보는 종목은 OpenDART 를 부르느라 몇 초 걸릴 수 있다. */
 export function fetchFinancials(symbol: string, years = 6) {
   return get<FinancialsResponse>(`/api/stocks/${symbol}/financials?years=${years}`)
+}
+
+// ── 미국 주식 (SEC EDGAR + 토스 시세) ──────────────────────────────
+
+export type UsListItem = {
+  symbol: string
+  name: string
+  english_name: string | null
+  market: string | null
+  security_type: string | null
+  last_price: string
+  base_price: string
+  change: string
+  change_rate: string
+  trading_volume: number
+  trading_amount: number
+  currency: string
+}
+
+export type UsCompanyDetail = {
+  ticker: string
+  cik: string
+  name: string
+  exchange: string | null
+  industry: string | null
+  fiscal_year_end: string | null
+  website: string | null
+}
+
+export type UsFinancialYear = {
+  fiscal_year: number
+  period_end: string
+  revenue: number | null
+  gross_profit: number | null
+  operating_income: number | null
+  net_income: number | null
+  total_assets: number | null
+  total_liabilities: number | null
+  total_equity: number | null
+  operating_margin: string | null
+  net_margin: string | null
+  revenue_growth: string | null
+  roe: string | null
+  debt_ratio: string | null
+  accession_no: string
+  filed_date: string
+  source_url: string
+}
+
+export type UsFinancialsResponse = {
+  ticker: string
+  cik: string
+  name: string
+  currency: string
+  years: UsFinancialYear[]
+}
+
+export type UsFilingItem = {
+  accession_no: string
+  form: string
+  filing_date: string
+  report_date: string
+  description: string
+  viewer_url: string
+}
+
+export function fetchUsList(limit = 50) {
+  return get<UsListItem[]>(`/api/us/list?limit=${limit}`)
+}
+
+/** 검색은 SEC 티커 목록에서 찾는다. 시세가 아니라 회사 식별 정보만 돌아온다. */
+export function searchUsStocks(keyword: string) {
+  return get<{ ticker: string; cik: string; name: string }[]>(
+    `/api/us/search?q=${encodeURIComponent(keyword)}`,
+  )
+}
+
+export function fetchUsCompany(ticker: string) {
+  return get<UsCompanyDetail>(`/api/us/${encodeURIComponent(ticker)}`)
+}
+
+export function fetchUsFinancials(ticker: string, years = 6) {
+  return get<UsFinancialsResponse>(`/api/us/${encodeURIComponent(ticker)}/financials?years=${years}`)
+}
+
+export function fetchUsFilings(ticker: string, count = 15) {
+  return get<UsFilingItem[]>(`/api/us/${encodeURIComponent(ticker)}/filings?count=${count}`)
 }
 
 export type DisclosureItem = {

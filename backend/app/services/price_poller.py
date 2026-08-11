@@ -41,12 +41,16 @@ MAX_SYMBOLS_PER_CALL = 200
 # 세션별 폴링 간격(초). 정규장에는 촘촘히, 시간외에는 느슨하게 본다.
 INTERVAL_BY_PHASE: dict[str, float] = {
     "REGULAR": 5.0,
+    "DAY": 5.0,  # 미국 종목의 토스 데이마켓. 정규장처럼 실제 체결이 일어난다.
     "PRE": 15.0,
     "AFTER": 15.0,
     "CLOSED": 60.0,
     "HOLIDAY": 60.0,
     "UNKNOWN": 30.0,
 }
+
+# 값이 움직이는 시간대. 이 동안에만 현재가를 다시 받는다.
+LIVE_PHASES = ("PRE", "REGULAR", "AFTER", "DAY")
 
 # 아무도 찾지 않는 종목을 폴링 대상에서 빼기까지의 시간(초).
 # 화면이 5초마다 요청하므로 이보다 짧으면 보고 있는 중에 빠져나간다.
@@ -58,16 +62,33 @@ CALENDAR_REFRESH_SEC = 600.0
 # 연속 실패 시 대기 시간의 상한(초). 토스가 죽었을 때 무한정 두드리지 않기 위한 것이다.
 MAX_BACKOFF_SEC = 120.0
 
-Phase = Literal["PRE", "REGULAR", "AFTER", "CLOSED", "HOLIDAY", "UNKNOWN"]
+Phase = Literal["PRE", "REGULAR", "AFTER", "DAY", "CLOSED", "HOLIDAY", "UNKNOWN"]
 
 PHASE_LABEL: dict[str, str] = {
     "PRE": "프리마켓",
     "REGULAR": "정규장",
     "AFTER": "애프터마켓",
+    "DAY": "데이마켓",
     "CLOSED": "장 마감",
     "HOLIDAY": "휴장일",
     "UNKNOWN": "확인 중",
 }
+
+# 국내와 미국은 응답 구조가 다르다.
+# 국내는 KRX+NXT 통합 세션이 `integrated` 안에 들어 있고, 미국은 세션이 최상위에 있으면서
+# 토스 자체 주간거래(dayMarket)가 하나 더 있다. 세션을 볼 순서도 다르다.
+KR_SESSION_ORDER = (("PRE", "preMarket"), ("REGULAR", "regularMarket"), ("AFTER", "afterMarket"))
+US_SESSION_ORDER = (
+    ("DAY", "dayMarket"),
+    ("PRE", "preMarket"),
+    ("REGULAR", "regularMarket"),
+    ("AFTER", "afterMarket"),
+)
+
+
+def classify_market(symbol: str) -> str:
+    """종목 코드로 어느 시장인지 가른다. 국내는 숫자 6자리, 미국은 알파벳 티커다."""
+    return "KR" if symbol.isdigit() and len(symbol) == 6 else "US"
 
 
 @dataclass(frozen=True)
@@ -103,25 +124,39 @@ def _parse(value: str | None) -> datetime | None:
         return None
 
 
-def resolve_phase(calendar: dict[str, Any] | None, now: datetime) -> MarketState:
+def resolve_phase(
+    calendar: dict[str, Any] | None, now: datetime, *, country: str = "KR"
+) -> MarketState:
     """장 운영시간 응답과 현재 시각으로 지금 세션을 판단한다.
 
-    응답의 `integrated` 는 KRX+NXT 통합 기준이라 프리마켓(08:00~09:00)과
-    애프터마켓(15:30~20:00)까지 포함한다. 우리가 보여줄 현재가도 통합 기준이므로 맞다.
+    국내: 세션이 `integrated`(KRX+NXT 통합) 안에 있고, 휴장일이면 그 값이 null 이다.
+    미국: 세션이 최상위에 있고, 토스 데이마켓(09:00~17:00 KST)이 하나 더 있다.
     """
     if not calendar:
         return MarketState("UNKNOWN", PHASE_LABEL["UNKNOWN"], None, None, None)
 
+    korea = country == "KR"
+    order = KR_SESSION_ORDER if korea else US_SESSION_ORDER
+    first_key = order[0][1]
+
     today = calendar.get("today") or {}
-    sessions = today.get("integrated")
     next_day = calendar.get("nextBusinessDay") or {}
-    next_open = ((next_day.get("integrated") or {}).get("preMarket") or {}).get("startTime")
+
+    def sessions_of(day: dict[str, Any]) -> dict[str, Any] | None:
+        # 국내는 한 겹 안에 들어 있다. 휴장일이면 그 값이 통째로 null 이다.
+        if korea:
+            return day.get("integrated")
+        # 미국은 최상위에 있다. 세션이 하나도 없으면 휴장으로 본다.
+        return day if any(day.get(key) for _, key in order) else None
+
+    sessions = sessions_of(today)
+    next_sessions = sessions_of(next_day) or {}
+    next_open = ((next_sessions.get(first_key)) or {}).get("startTime")
 
     if not sessions:
-        # integrated 가 null 이면 휴장일이다. 공휴일표를 따로 볼 필요가 없다.
         return MarketState("HOLIDAY", PHASE_LABEL["HOLIDAY"], today.get("date"), next_open, None)
 
-    for phase, key in (("PRE", "preMarket"), ("REGULAR", "regularMarket"), ("AFTER", "afterMarket")):
+    for phase, key in order:
         window = sessions.get(key) or {}
         start = _parse(window.get("startTime"))
         end = _parse(window.get("endTime"))
@@ -134,9 +169,10 @@ def resolve_phase(calendar: dict[str, Any] | None, now: datetime) -> MarketState
                 window.get("endTime"),
             )
 
-    # 어느 세션에도 속하지 않는다. 개장 전이면 오늘 프리마켓이, 마감 후면 내일이 다음 개장이다.
-    pre_start = (sessions.get("preMarket") or {}).get("startTime")
-    upcoming = pre_start if (_parse(pre_start) and now < _parse(pre_start)) else next_open  # type: ignore[operator]
+    # 어느 세션에도 속하지 않는다. 개장 전이면 오늘 첫 세션이, 마감 후면 다음 영업일이 답이다.
+    first_start = (sessions.get(first_key) or {}).get("startTime")
+    parsed_first = _parse(first_start)
+    upcoming = first_start if (parsed_first and now < parsed_first) else next_open
     return MarketState("CLOSED", PHASE_LABEL["CLOSED"], today.get("date"), upcoming, None)
 
 
@@ -150,7 +186,12 @@ class PricePoller:
     def __init__(self) -> None:
         self._prices: dict[str, CachedPrice] = {}
         self._wanted: dict[str, float] = {}  # 종목 → 마지막으로 요청된 시각(monotonic)
-        self._market = MarketState("UNKNOWN", PHASE_LABEL["UNKNOWN"], None, None, None)
+        # 국내와 미국은 장 시간이 완전히 다르다. 한쪽 상태를 다른 쪽에 쓰면 안 된다 —
+        # 한국 애프터마켓(16시)에 미국 화면이 "애프터마켓"으로 뜨는 식이 된다.
+        self._markets: dict[str, MarketState] = {
+            "KR": MarketState("UNKNOWN", PHASE_LABEL["UNKNOWN"], None, None, None),
+            "US": MarketState("UNKNOWN", PHASE_LABEL["UNKNOWN"], None, None, None),
+        }
         self._calendar_checked_at: float = 0.0
         self._last_error: str | None = None
         self._last_success_at: datetime | None = None
@@ -192,8 +233,11 @@ class PricePoller:
         return {s: self._prices[s] for s in symbols if s in self._prices}
 
     @property
-    def market(self) -> MarketState:
-        return self._market
+    def markets(self) -> dict[str, MarketState]:
+        return dict(self._markets)
+
+    def market(self, country: str = "KR") -> MarketState:
+        return self._markets.get(country, self._markets["KR"])
 
     @property
     def last_error(self) -> str | None:
@@ -252,27 +296,41 @@ class PricePoller:
 
         loop_now = time.monotonic()
         need_calendar = loop_now - self._calendar_checked_at > CALENDAR_REFRESH_SEC
-        symbols = list(self._wanted)
+
+        # 종목을 시장별로 가른다. 국내와 미국은 장 시간이 달라 갱신 여부를 따로 판단해야 한다.
+        by_market: dict[str, list[str]] = {"KR": [], "US": []}
+        for symbol in self._wanted:
+            by_market[classify_market(symbol)].append(symbol)
 
         # 아무도 화면을 안 보고 있고 달력도 최신이면 부를 이유가 없다.
-        if not symbols and not need_calendar:
-            return INTERVAL_BY_PHASE[self._market.phase]
+        if not self._wanted and not need_calendar:
+            return self._next_delay(by_market)
 
         try:
             async with TossClient() as toss:
                 if need_calendar:
-                    calendar = await toss.get_market_calendar_kr()
-                    self._market = resolve_phase(calendar, datetime.now(KST))
+                    now = datetime.now(KST)
+                    self._markets["KR"] = resolve_phase(
+                        await toss.get_market_calendar_kr(), now, country="KR"
+                    )
+                    self._markets["US"] = resolve_phase(
+                        await toss.get_market_calendar_us(), now, country="US"
+                    )
                     self._calendar_checked_at = loop_now
 
-                # 장이 열려 있으면 전부 갱신한다. 값이 계속 움직이기 때문이다.
-                # 장 상태를 모를 때(UNKNOWN)도 일단 받는다. 화면이 비는 것보다 낫다.
-                if self._market.phase in ("PRE", "REGULAR", "AFTER", "UNKNOWN"):
-                    target = symbols
-                else:
-                    # 마감·휴장에는 값이 바뀌지 않으므로 갱신할 이유가 없다. 다만 아직 한 번도
-                    # 받지 못한 종목은 채운다. 마감 후에도 마지막 체결가는 보여야 하기 때문이다.
-                    target = [s for s in symbols if s not in self._prices]
+                target: list[str] = []
+                for country, symbols in by_market.items():
+                    if not symbols:
+                        continue
+                    phase = self._markets[country].phase
+                    # 장이 열려 있으면 전부 갱신한다. 값이 계속 움직이기 때문이다.
+                    # 장 상태를 모를 때(UNKNOWN)도 일단 받는다. 화면이 비는 것보다 낫다.
+                    if phase in LIVE_PHASES or phase == "UNKNOWN":
+                        target.extend(symbols)
+                    else:
+                        # 마감·휴장에는 값이 바뀌지 않는다. 다만 아직 한 번도 받지 못한 종목은
+                        # 채운다 — 마감 후에도 마지막 체결가는 보여야 하기 때문이다.
+                        target.extend(s for s in symbols if s not in self._prices)
 
                 if target:
                     await self._fetch_prices(toss, target)
@@ -284,9 +342,23 @@ class PricePoller:
             self._last_error = str(exc)
             logger.warning("현재가 폴링 실패 (%d회 연속): %s", self._failures, exc)
             # 연속 실패하면 간격을 벌린다. 죽은 API 를 5초마다 두드려 봐야 소용없다.
-            return min(MAX_BACKOFF_SEC, INTERVAL_BY_PHASE[self._market.phase] * 2**self._failures)
+            base = self._next_delay(by_market)
+            return min(MAX_BACKOFF_SEC, base * 2**self._failures)
 
-        return INTERVAL_BY_PHASE[self._market.phase]
+        return self._next_delay(by_market)
+
+    def _next_delay(self, by_market: dict[str, list[str]]) -> float:
+        """다음 주기까지 기다릴 시간.
+
+        보고 있는 종목이 속한 시장 중 **가장 빠른 주기**를 따른다. 국내와 미국을 동시에
+        보고 있는데 한쪽만 장중이면 그쪽 속도에 맞춰야 그 화면이 멈춰 보이지 않는다.
+        """
+        intervals = [
+            INTERVAL_BY_PHASE[self._markets[country].phase]
+            for country, symbols in by_market.items()
+            if symbols
+        ]
+        return min(intervals) if intervals else INTERVAL_BY_PHASE["CLOSED"]
 
     async def _fetch_prices(self, toss: TossClient, symbols: list[str]) -> None:
         """관심 종목의 현재가를 받아 캐시를 갱신한다. 200 개씩 끊어 부른다."""

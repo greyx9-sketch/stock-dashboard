@@ -18,6 +18,21 @@ export function formatBigWon(value: number): string {
   return won.format(value)
 }
 
+/** 달러 금액을 B(십억)·M(백만) 단위로 줄인다. 미국 재무 수치용. */
+export function formatUsd(value: number): string {
+  const abs = Math.abs(value)
+  if (abs >= 1_000_000_000) return `$${(value / 1_000_000_000).toFixed(1)}B`
+  if (abs >= 1_000_000) return `$${(value / 1_000_000).toFixed(0)}M`
+  return `$${won.format(Math.round(value))}`
+}
+
+/** 달러 주가. 센트까지 보여준다. */
+export function formatUsdPrice(value: string | number): string {
+  const num = typeof value === 'string' ? Number(value) : value
+  if (!Number.isFinite(num)) return '-'
+  return `$${num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
 /** 거래량은 주 단위라 만/천 단위로 줄인다. */
 export function formatVolume(value: number): string {
   if (value >= 1_0000_0000) return `${(value / 1_0000_0000).toFixed(1)}억`

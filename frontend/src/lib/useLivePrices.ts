@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { fetchLivePrices } from './api'
-import type { LiveQuote, MarketState, PricesResponse } from './api'
+import type { Country, LiveQuote, MarketState, PricesResponse } from './api'
 
 // 화면이 현재가를 주기적으로 받아 오는 훅.
 //
@@ -29,7 +29,7 @@ export type LivePrices = {
   loaded: boolean
 }
 
-export function useLivePrices(symbols: string[]): LivePrices {
+export function useLivePrices(symbols: string[], country: Country = 'KR'): LivePrices {
   const [data, setData] = useState<PricesResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -63,7 +63,7 @@ export function useLivePrices(symbols: string[]): LivePrices {
         schedule(
           filling
             ? FILLING_INTERVAL_MS
-            : result.market.is_live
+            : result.markets[country].is_live
               ? LIVE_INTERVAL_MS
               : IDLE_INTERVAL_MS,
         )
@@ -95,14 +95,14 @@ export function useLivePrices(symbols: string[]): LivePrices {
       if (timer.current) window.clearTimeout(timer.current)
       document.removeEventListener('visibilitychange', onVisible)
     }
-  }, [key])
+  }, [key, country])
 
   const bySymbol = new Map<string, LiveQuote>()
   for (const price of data?.prices ?? []) bySymbol.set(price.symbol, price)
 
   return {
     bySymbol,
-    market: data?.market ?? null,
+    market: data?.markets[country] ?? null,
     error,
     loaded: data !== null,
   }
