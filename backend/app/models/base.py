@@ -72,6 +72,6 @@ def init_db() -> None:
     컬럼이 바뀌는 변경은 이 함수가 처리하지 못한다. 그때가 오면 마이그레이션 도구를 붙인다.
     """
     # import 해야 테이블 정의가 Base 에 등록된다. 순환 import 를 피해 함수 안에서 부른다.
-    from app.models import corp, financial, quote  # noqa: F401
+    from app.models import corp, financial, quote, us_company  # noqa: F401
 
     Base.metadata.create_all(engine)

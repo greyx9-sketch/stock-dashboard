@@ -27,7 +27,8 @@ from apscheduler.triggers.cron import CronTrigger
 
 from app.clients.dart import DartError
 from app.clients.krx import KrxError
-from app.services import dart_corps, krx_ingest
+from app.clients.sec import SecError
+from app.services import dart_corps, krx_ingest, sec_companies
 
 logger = logging.getLogger(__name__)
 
@@ -145,6 +146,13 @@ class KrxScheduler:
                 report.corp_rows = 0 if corp.skipped else corp.rows
             except (DartError, RuntimeError) as exc:
                 logger.warning("DART 고유번호 매핑 갱신 실패(계속 진행): %s", exc)
+
+            # SEC 티커 매핑도 같은 방식으로 본다. 여기서 실패해도 나머지는 계속한다 —
+            # 세 개는 서로 다른 데이터 소스라 하나가 죽었다고 다른 둘을 멈출 이유가 없다.
+            try:
+                await sec_companies.sync_companies()
+            except (SecError, RuntimeError) as exc:
+                logger.warning("SEC 티커 매핑 갱신 실패(계속 진행): %s", exc)
 
             result = await krx_ingest.ingest_recent(scan_days)
             report.trading_days = len(result.trading_days)
