@@ -197,11 +197,23 @@ class TossClient:
         code = None
         message = response.text[:200]
         try:
-            error = response.json().get("error") or {}
-            code = error.get("code")
-            message = error.get("message") or message
+            payload = response.json()
         except ValueError:
-            pass
+            payload = None
+
+        if isinstance(payload, dict):
+            error = payload.get("error")
+            if isinstance(error, dict):
+                # 토스 일반 API 형식: {"error": {"code": ..., "message": ...}}
+                code = error.get("code")
+                message = error.get("message") or message
+            elif isinstance(error, str):
+                # OAuth2 표준 형식: {"error": "invalid_client",
+                #                    "error_description": "..."}
+                # 토큰 엔드포인트가 이 형식으로 답한다. 예전에는 위 dict 형식만 가정해
+                # 여기서 AttributeError 가 나면서 진짜 원인이 가려졌다.
+                code = error
+                message = payload.get("error_description") or message
 
         if response.status_code == 403:
             hint = (
