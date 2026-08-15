@@ -103,13 +103,17 @@
 - [x] **프로그램 설치·코드 배포** — 완료. Python 3.12.3 / Node 22.23.2 / Caddy 2.11.4,
       `/opt/stock` 에 클론, venv·프론트 빌드 성공, systemd 등록 후 `/health` → `{"status":"ok"}`.
       로컬 `data/app.db` 를 그대로 올려 KRX 232,953행·DART 3,981건·SEC 10,387건을 재수집 없이 이어받았다.
-- [ ] **접근 비밀번호 정하기** ⚠️ **대기 중** — `.env` 의 `SITE_PASSWORD` 가 **비어 있다.**
-      값을 정하면 서버에서 `caddy hash-password` 로 해시를 만들어 `/etc/caddy/Caddyfile` 에 넣는다.
-      아이디는 `view` 로 고정. 이력서에 URL과 함께 적을 값이다.
-      ※ HTTPS 가 아니므로 **다른 서비스에서 쓰는 비밀번호를 재사용하지 않는다.**
-- [ ] **서버 IP를 토스 허용 IP에 등록** ⚠️ — **129.225.188.89** 를 추가한다.
-      tossinvest.com → 설정 → Open API → 허용 IP 관리. 집 IP(14.4.110.71)는 그대로 둔다.
-      빠뜨리면 화면은 뜨는데 현재가가 통째로 빈다. **2분**
+- [x] **접근 비밀번호 정하기** — 완료 (2026-08-15). `.env` 의 `SITE_PASSWORD` 에 있고,
+      서버에서 해시로 바꿔 `/etc/caddy/Caddyfile` 에 넣었다. 아이디는 `view`.
+      ※ 안내서에 빠져 있던 함정 하나를 이번에 찾아 보완했다 — `/var/log/caddy` 폴더를 미리
+      만들고 caddy 소유로 바꾸지 않으면 **Caddy 가 기동 자체를 못 한다**(10-1 단계).
+      ※ 비밀번호가 4자다. 브루트포스 자체는 bcrypt cost 14 라 사실상 불가능하지만,
+      1 OCPU 서버라 시도가 몰리면 CPU 가 눌릴 수 있다. 길게 바꾸고 싶으면
+      `.env` 의 `SITE_PASSWORD` 를 고치고 `deploy/setup_caddy.sh` 를 다시 돌리면 된다.
+- [x] **서버 IP를 토스 허용 IP에 등록** — 완료 (2026-08-15). **129.225.188.89**
+      등록 전에는 `IP address not allowed (code=access_denied)` 가 났고, 등록 후 사라졌다.
+- [x] **재부팅 내구성 확인** — `sudo systemctl reboot` 후 **30초 만에 자동 복구**.
+      stock-dashboard·caddy 둘 다 enabled, 스왑 2GB·iptables 80 규칙·예약 IP 모두 유지됨.
 
 ※ 도메인은 사지 않기로 했다. 그래서 **HTTPS가 아니다** — 접근 비밀번호가 암호화되지 않고 오간다.
 읽기 전용 대시보드라 피해는 제한적이지만, 나중에 도메인을 사면 `deploy/Caddyfile` 의 주석 블록으로
