@@ -5,3 +5,4 @@ pydantic-settings    # .env 파일 읽기
 httpx                # 외부 API 호출 (토스증권·OpenDART·SEC). 동기/비동기 모두 지원
 sqlalchemy           # SQLite 를 파이썬 객체로 다루는 도구 (DB 계층)
 apscheduler          # 정해진 시각에 작업 실행 (확정 종가 자동 수집)
+anthropic            # 10-K 서술 분석 (6단계). 공식 SDK — 재시도·구조화 출력이 들어 있다
