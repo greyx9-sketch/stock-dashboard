@@ -344,6 +344,42 @@ export function fetchMacro() {
   return get<MacroStrip>('/api/macro')
 }
 
+// ── 수급 동향 (국내 전용) ───────────────────────────────────────────
+//
+// 순매수는 **주(수량)** 단위 정수다. 금액이 아니다 — 토스 종목별 엔드포인트가 수량만 준다.
+// 지표(`metrics`)는 자료마다 갱신 시각이 달라 **항목별로 기준일이 다를 수 있다.**
+
+export type InvestorDay = {
+  date: string
+  /** 개인 순매수 (주). 자료가 없으면 null */
+  individual: number | null
+  foreigner: number | null
+  institution: number | null
+}
+
+export type FlowMetric = {
+  label: string
+  /** 화면에 그대로 쓸 문자열 */
+  value: string
+  unit: string
+  /** 이 지표의 기준일 */
+  as_of: string
+  note: string
+}
+
+export type Flows = {
+  symbol: string
+  /** 최신 거래일부터 */
+  investors: InvestorDay[]
+  metrics: FlowMetric[]
+  /** 못 받은 자료의 이유. 비어 있으면 전부 정상 */
+  errors: string[]
+}
+
+export function fetchFlows(symbol: string, days = 5) {
+  return get<Flows>(`/api/stocks/${symbol}/flows?days=${days}`)
+}
+
 // ── 국내 사업보고서 서술 분석 ───────────────────────────────────────
 //
 // 미국 10-K 분석과 같은 규칙이다 — GET 은 저장된 것만 읽어 공짜, POST 만 돈이 든다.

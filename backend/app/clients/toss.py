@@ -296,6 +296,62 @@ class TossClient:
         return await self._request("/api/v1/market-calendar/US", group="MARKET_INFO",
                                    params={"date": day} if day else None)
 
+    # ------------------------------------------------------------------ 수급 동향
+    #
+    # 국내 종목 전용이다(미국 종목에 부르면 `unsupported-market`). 다섯 경로가 모두 같은
+    # 모양이다 — `count`(최대 100)와 `until`(기준일)을 받고, `{"records": [...], "nextUntil": ...}`
+    # 를 **최신순**으로 돌려준다.
+    #
+    # 갱신 시각이 자료마다 다르다(응답의 `updatedAt` 으로 확인했다):
+    #   공매도·대차거래  당일 18~19시    신용거래·투자자별  다음 영업일 04시
+    # 그래서 가장 최근 거래일 자료가 아직 안 올라와 있을 수 있다. 날짜를 함께 보여줘야 한다.
+
+    async def _trading_trend(
+        self, symbol: str, segment: str, *, count: int, until: str | None = None
+    ) -> list[dict[str, Any]]:
+        params: dict[str, Any] = {"count": min(max(count, 1), 100)}
+        if until:
+            params["until"] = until
+        payload = await self._request(
+            f"/api/v1/stocks/{symbol}/{segment}",
+            group="STOCK_TRADING_TREND",
+            params=params,
+        )
+        return payload.get("records") or []
+
+    async def get_investor_trading(
+        self, symbol: str, *, count: int = 5, until: str | None = None
+    ) -> list[dict[str, Any]]:
+        """투자자별 매매동향. 개인·외국인·기관 각각 매수/매도/순매수 **수량(주)**.
+
+        기관은 `breakdown` 으로 금융투자·보험·투신·사모·은행 등으로 더 쪼개져 온다.
+        """
+        return await self._trading_trend(symbol, "investor-trading", count=count, until=until)
+
+    async def get_program_trades(
+        self, symbol: str, *, count: int = 5, until: str | None = None
+    ) -> list[dict[str, Any]]:
+        """프로그램매매. 차익(arbitrage)·비차익(nonArbitrage)으로 나뉜다."""
+        return await self._trading_trend(symbol, "program-trades", count=count, until=until)
+
+    async def get_short_selling(
+        self, symbol: str, *, count: int = 5, until: str | None = None
+    ) -> list[dict[str, Any]]:
+        """공매도. 수량·금액과 각각의 비중(`shortSellingVolumeRate` 는 비율 소수)."""
+        return await self._trading_trend(symbol, "short-selling", count=count, until=until)
+
+    async def get_securities_lending(
+        self, symbol: str, *, count: int = 5, until: str | None = None
+    ) -> list[dict[str, Any]]:
+        """대차거래. 체결·상환 수량과 잔고(수량·금액)."""
+        return await self._trading_trend(symbol, "securities-lending", count=count, until=until)
+
+    async def get_credit_trades(
+        self, symbol: str, *, count: int = 5, until: str | None = None
+    ) -> list[dict[str, Any]]:
+        """신용거래. 융자(marginLoan)·대주(stockLoan) 각각 신규·상환·잔고와 잔고비율."""
+        return await self._trading_trend(symbol, "credit-trades", count=count, until=until)
+
     async def get_market_indicators(self, symbols: list[str]) -> list[dict[str, Any]]:
         """시장 지표 현재가. **국내 지수·국채만** 제공된다(미국 지수는 없다).
 

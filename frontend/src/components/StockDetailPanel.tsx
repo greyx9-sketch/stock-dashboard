@@ -5,6 +5,7 @@ import { PriceChart } from './PriceChart'
 import { DisclosureList } from './DisclosureList'
 import { FinancialSummary } from './FinancialSummary'
 import { ReportAnalysis } from './ReportAnalysis'
+import { SupplyDemand } from './SupplyDemand'
 import {
   changeColor,
   formatBigWon,
@@ -140,6 +141,9 @@ export function StockDetailPanel({ symbol, live, market }: Props) {
         <Field label="거래대금" value={`${formatBigWon(latest.trade_value)}원`} />
         <Field label="시가총액" value={`${formatBigWon(latest.market_cap)}원`} />
       </dl>
+
+      {/* 수급은 시세 옆에 둔다 — 거래량·거래대금과 같은 시장 자료라서 재무보다 위가 자연스럽다. */}
+      <SupplyDemand symbol={symbol} />
 
       <FinancialSummary symbol={symbol} />
 
