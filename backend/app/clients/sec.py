@@ -131,6 +131,39 @@ class SecClient:
         except ValueError:
             raise SecError(f"SEC 가 JSON 이 아닌 응답을 돌려줬습니다.\n  앞부분: {response.text[:200]}") from None
 
+    async def _get_text(self, url: str) -> str:
+        """공시 원문(HTML)을 받는다.
+
+        `_get_json` 과 나눈 이유는 응답이 JSON 이 아니고 크기가 전혀 다르기 때문이다.
+        10-K 본문 한 건이 5~15MB 다. 같은 토큰 버킷을 지나므로 초당 상한은 그대로 지킨다.
+        """
+        await self._bucket.acquire()
+        response = await self._http.get(url)
+
+        if response.status_code == 403:
+            raise SecError(
+                "SEC 가 403 으로 막았습니다.\n"
+                "  User-Agent 에 이름과 이메일이 들어 있어야 합니다. .env 의 SEC_USER_AGENT 를\n"
+                "  확인해 주세요. 초당 10건을 넘겨 일시 차단된 경우일 수도 있습니다.",
+                status=403,
+            )
+        if response.status_code == 404:
+            raise SecError(
+                f"공시 원문을 찾지 못했습니다(404).\n  주소: {url}\n"
+                "  접수번호나 파일 이름이 바뀌었을 수 있습니다.",
+                status=404,
+            )
+        if response.status_code != 200:
+            raise SecError(
+                f"공시 원문 요청이 HTTP {response.status_code} 로 실패했습니다.\n  주소: {url}",
+                status=response.status_code,
+            )
+        return response.text
+
+    async def get_filing_document(self, filing: UsFiling) -> str:
+        """공시 한 건의 본문 HTML. `UsFiling.viewer_url` 이 가리키는 파일이다."""
+        return await self._get_text(filing.viewer_url)
+
     # ------------------------------------------------------------------ 티커 매핑
 
     async def fetch_company_tickers(self) -> list[UsCompany]:
