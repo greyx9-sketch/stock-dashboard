@@ -93,8 +93,11 @@ def _base_prices(symbols: list[str]) -> dict[str, KrxDailyQuote]:
 def get_prices(
     symbols: str = Query(
         ...,
-        description="종목 코드를 콤마로 구분. 최대 200개 (예: 005930,000660)",
-        min_length=6,
+        description="종목 코드나 티커를 콤마로 구분. 최대 200개 (예: 005930,000660 / AAPL,KO)",
+        # 6 이었다. KRX 종목코드가 6자리라 맞는 값처럼 보였지만, 미국 티커는 KO·AAPL 처럼
+        # 6자 미만이라 한 종목만 보고 있을 때 422 로 거절됐다(화면에 "현재가 연결 끊김").
+        # 여러 종목이면 콤마 때문에 길어져 우연히 통과하던 탓에 늦게 드러났다.
+        min_length=1,
     ),
 ) -> PricesOut:
     """화면이 주기적으로 부르는 경로. 캐시만 읽으므로 외부 API 를 기다리지 않는다.
