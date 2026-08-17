@@ -222,6 +222,55 @@ class DartClient:
         except ElementTree.ParseError:
             return None
 
+    # ------------------------------------------------------------------ 공시 원문
+
+    async def get_document(self, receipt_no: str) -> dict[str, str]:
+        """공시 원문. 접수번호 하나로 받는다. ZIP 안의 XML 들을 {파일명: 내용} 으로 돌려준다.
+
+        `corpCode.xml` 과 같은 방식이다 — 성공하면 ZIP(바이너리), 실패하면 XML 오류 문서가
+        온다. 앞 두 바이트로 구분한다.
+
+        사업보고서 하나가 수 MB 이고 첨부(감사보고서 등)가 여러 파일로 나뉘어 들어 있다.
+        어느 파일이 본문인지는 호출한 쪽에서 정한다 — 파일 이름 규칙이 회사마다 다르다.
+
+        문서: https://opendart.fss.or.kr/guide/detail.do?apiGrpCd=DS001&apiId=2019003
+        """
+        await self._bucket.acquire()
+        response = await self._http.get(
+            "/document.xml", params={"crtfc_key": self._key, "rcept_no": receipt_no}
+        )
+
+        if response.status_code != 200:
+            raise DartError(
+                f"공시 원문 요청이 HTTP {response.status_code} 로 실패했습니다.\n"
+                f"  접수번호: {receipt_no}"
+            )
+
+        if response.content[:2] != b"PK":
+            status = self._status_from_xml(response.text)
+            hint = ERROR_HINTS.get(status or "", "접수번호를 확인해 주세요.")
+            raise DartError(
+                f"공시 원문을 받지 못했습니다(status {status}).\n  {hint}", status=status
+            )
+
+        archive = zipfile.ZipFile(io.BytesIO(response.content))
+        documents: dict[str, str] = {}
+        for name in archive.namelist():
+            if name.endswith("/"):
+                continue
+            raw = archive.read(name)
+            # DART 원문은 EUC-KR 계열(CP949)이 흔하고 UTF-8 도 섞여 있다. 선언을 믿지 말고
+            # 순서대로 시도한다. 인코딩을 틀리면 한글 제목을 못 찾아 섹션 추출이 통째로 실패한다.
+            for encoding in ("utf-8", "cp949", "euc-kr"):
+                try:
+                    documents[name] = raw.decode(encoding)
+                    break
+                except UnicodeDecodeError:
+                    continue
+            else:
+                documents[name] = raw.decode("utf-8", errors="replace")
+        return documents
+
     # ------------------------------------------------------------------ 공시
 
     async def get_disclosures(

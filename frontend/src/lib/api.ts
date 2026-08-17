@@ -310,6 +310,51 @@ export function runUsAnalysis(ticker: string, force = false) {
   })
 }
 
+// ── 국내 사업보고서 서술 분석 ───────────────────────────────────────
+//
+// 미국 10-K 분석과 같은 규칙이다 — GET 은 저장된 것만 읽어 공짜, POST 만 돈이 든다.
+//
+// 응답 모양이 미국과 조금 다르다. 국내 사업보고서에는 위험요인 전용 항목이 없어
+// 보고서 곳곳에서 찾아내야 하므로, 각 위험이 어디서 나왔는지 `source` 로 밝힌다.
+
+export type KrRiskItem = {
+  title: string
+  why_it_matters: string
+  /** 보고서 어느 절에서 나온 내용인지 */
+  source: string
+}
+
+export type KrAnalysis = {
+  status: 'ok' | 'none' | 'failed'
+  stock_code: string
+  corp_name: string | null
+  report_name: string | null
+  fiscal_year: number | null
+  received_date: string | null
+  source_url: string | null
+  model: string | null
+  generated_at: string | null
+  sections: string[]
+  truncated: string[]
+  business_summary: string | null
+  segments: string[]
+  key_risks: KrRiskItem[]
+  mdna_points: string[]
+  moat_and_competition: string | null
+  error: string | null
+}
+
+/** 저장된 분석 조회. 새로 분석하지 않으므로 비용이 들지 않는다. */
+export function fetchKrAnalysis(symbol: string) {
+  return get<KrAnalysis>(`/api/stocks/${symbol}/analysis`)
+}
+
+/** 분석 실행. 원문이 수 MB 라 1~3분 걸리고 보고서 한 건당 비용이 발생한다. */
+export function runKrAnalysis(symbol: string, force = false) {
+  const query = force ? '?force=true' : ''
+  return request<KrAnalysis>(`/api/stocks/${symbol}/analysis${query}`, { method: 'POST' })
+}
+
 export type DisclosureItem = {
   receipt_no: string
   report_name: string

@@ -4,6 +4,7 @@ import type { LiveQuote, MarketState, PricePoint, Quote } from '../lib/api'
 import { PriceChart } from './PriceChart'
 import { DisclosureList } from './DisclosureList'
 import { FinancialSummary } from './FinancialSummary'
+import { ReportAnalysis } from './ReportAnalysis'
 import {
   changeColor,
   formatBigWon,
@@ -141,6 +142,9 @@ export function StockDetailPanel({ symbol, live, market }: Props) {
       </dl>
 
       <FinancialSummary symbol={symbol} />
+
+      {/* 미국 화면과 같은 자리 — 재무표 아래, 공시 위. */}
+      <ReportAnalysis symbol={symbol} />
 
       <DisclosureList symbol={symbol} />
     </div>

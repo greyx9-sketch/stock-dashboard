@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 
 from app.clients.sec import SecError
 from app.models.us_analysis import STATUS_OK, SecAnalysis
-from app.services import sec_companies, tenk_analysis
+from app.services import llm_budget, sec_companies, tenk_analysis
 
 logger = logging.getLogger(__name__)
 
@@ -119,24 +119,20 @@ def _resolve(ticker: str):
 TICKER_PATH = Path(description="티커 (예: AAPL)", pattern=r"^[A-Za-z0-9.\-]{1,12}$")
 
 
-@router.get("/analysis/usage", summary="분석 사용량·비용")
+@router.get("/analysis/usage", summary="분석 사용량·비용 (국내·미국 합산)")
 def get_usage() -> AnalysisUsageOut:
-    """지금까지 몇 건을 분석했고 얼마를 썼는지. 비용 사고를 눈으로 확인하는 창구다."""
+    """지금까지 몇 건을 분석했고 얼마를 썼는지. 비용 사고를 눈으로 확인하는 창구다.
+
+    국내 사업보고서 분석과 **합산**이다. 하루 상한도 합산으로 걸린다 — 상한은 지갑
+    기준이지 시장 기준이 아니다.
+    """
     from app.config import get_settings
-    from sqlalchemy import func, select
-
-    from app.models.base import get_session
-
-    with get_session() as session:
-        total = session.execute(
-            select(func.count()).select_from(SecAnalysis)
-        ).scalar_one()
 
     return AnalysisUsageOut(
-        calls_last_24h=tenk_analysis.calls_today(),
+        calls_last_24h=llm_budget.calls_today(),
         daily_limit=get_settings().analysis_daily_limit,
-        total_analyses=total,
-        total_cost_usd=round(tenk_analysis.total_cost_micro_usd() / 1_000_000, 4),
+        total_analyses=llm_budget.total_analyses(),
+        total_cost_usd=round(llm_budget.total_cost_micro_usd() / 1_000_000, 4),
         model=tenk_analysis.MODEL,
         prompt_version=tenk_analysis.PROMPT_VERSION,
     )

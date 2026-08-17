@@ -7,7 +7,8 @@
 겹겹이 둔 상한(콘솔 월 상한은 이 파일 밖, 사용자가 설정):
 
   1. DB 캐시    같은 (접수번호, 모델, 프롬프트 버전) 이면 절대 다시 부르지 않는다
-  2. 하루 상한  .env 의 ANALYSIS_DAILY_LIMIT (기본 20건)
+  2. 하루 상한  .env 의 ANALYSIS_DAILY_LIMIT (기본 20건). **국내 분석과 합쳐 센다** —
+                시장별로 따로 세면 설정한 20건이 실제로는 40건이 된다(`llm_budget.py`)
   3. 동시 1건   1 OCPU 서버이기도 하고, 동시 요청이 캐시를 우회해 중복 호출하는 것을 막는다
   4. 입력 상한  부르기 전에 count_tokens(무료)로 재고, 넘으면 잘라서 다시 잰다
   5. 실패 기록  실패도 행으로 남겨 화면을 열 때마다 재시도하는 일을 막는다
@@ -19,20 +20,19 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
 
 import anthropic
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import select
 
 from app.clients.sec import SecClient, SecError, UsFiling
 from app.config import get_settings
 from app.models.base import get_session
 from app.models.us_analysis import STATUS_FAILED, STATUS_OK, SecAnalysis
 from app.models.us_company import SecCompany
+from app.services import llm_budget
 from app.services.tenk_extract import (
     TenKExtractError,
     TenKSections,
@@ -60,13 +60,7 @@ TRIM_ATTEMPTS = 3
 # 다섯 필드를 제대로 채운다.
 EFFORT = "high"
 
-# 비용 표시는 **정가 기준 추정**이다. 도입가 기간에는 실제 청구가 이보다 적다.
-# 적게 추정하는 쪽이 위험하므로 일부러 비싼 쪽으로 잡는다.
-PRICE_INPUT_PER_MTOK_USD = 3.0
-PRICE_OUTPUT_PER_MTOK_USD = 15.0
-
-# 동시에 한 건만. 두 사람이 같은 종목 버튼을 동시에 눌러도 캐시를 우회하지 못하게 한다.
-_call_lock = asyncio.Lock()
+# 가격·동시 실행 잠금·하루 상한은 `llm_budget.py` 에 있다. 국내 분석과 같은 지갑을 쓴다.
 
 
 class AnalysisError(Exception):
@@ -245,22 +239,6 @@ def _find(accession_no: str) -> SecAnalysis | None:
         return session.get(SecAnalysis, (accession_no, MODEL, PROMPT_VERSION))
 
 
-def calls_today() -> int:
-    """오늘 실제로 API 를 부른 횟수. input_tokens 가 0 인 행은 부르지 않은 것이다."""
-    since = datetime.now(timezone.utc) - timedelta(days=1)
-    with get_session() as session:
-        return session.execute(
-            select(func.count())
-            .select_from(SecAnalysis)
-            .where(SecAnalysis.created_at >= since, SecAnalysis.input_tokens > 0)
-        ).scalar_one()
-
-
-def total_cost_micro_usd() -> int:
-    with get_session() as session:
-        return session.execute(select(func.coalesce(func.sum(SecAnalysis.cost_micro_usd), 0))).scalar_one()
-
-
 def _save(row: SecAnalysis) -> SecAnalysis:
     with get_session() as session:
         merged = session.merge(row)
@@ -384,13 +362,6 @@ def _is_complete(content: TenKAnalysisContent) -> bool:
     return bool(content.business_summary.strip()) and bool(content.key_risks)
 
 
-def _cost_micro_usd(input_tokens: int, output_tokens: int) -> int:
-    dollars = (
-        input_tokens * PRICE_INPUT_PER_MTOK_USD + output_tokens * PRICE_OUTPUT_PER_MTOK_USD
-    ) / 1_000_000
-    return round(dollars * 1_000_000)
-
-
 async def analyze(company: SecCompany, *, force: bool = False) -> SecAnalysis:
     """최신 10-K 를 분석한다. 이미 있으면 그대로 돌려주고 API 를 부르지 않는다."""
     filing = await _latest_10k(company)
@@ -399,20 +370,16 @@ async def analyze(company: SecCompany, *, force: bool = False) -> SecAnalysis:
     if existing is not None and not _should_rerun(existing, force=force):
         return existing
 
-    async with _call_lock:
+    async with llm_budget.call_lock:
         # 잠금을 기다리는 사이 다른 요청이 이미 끝냈을 수 있다.
         existing = _find(filing.accession_no)
         if existing is not None and not _should_rerun(existing, force=force):
             return existing
 
-        limit = get_settings().analysis_daily_limit
-        used = calls_today()
-        if used >= limit:
-            raise AnalysisError(
-                f"하루 분석 상한({limit}건)에 도달했습니다. 지난 24시간 동안 {used}건을 "
-                "분석했습니다.\n비용 사고를 막기 위한 제한입니다. 내일 다시 시도하거나 "
-                ".env 의 ANALYSIS_DAILY_LIMIT 을 올려 주세요."
-            )
+        try:
+            llm_budget.check_daily_limit()
+        except llm_budget.BudgetExceeded as exc:
+            raise AnalysisError(str(exc)) from exc
 
         doc_stub = _Document(company=company, filing=filing, sections=_EMPTY)
         try:
@@ -449,7 +416,7 @@ async def analyze(company: SecCompany, *, force: bool = False) -> SecAnalysis:
             truncated=",".join(used_sections.truncated),
             input_tokens=in_tok,
             output_tokens=out_tok,
-            cost_micro_usd=_cost_micro_usd(in_tok, out_tok),
+            cost_micro_usd=llm_budget.cost_micro_usd(in_tok, out_tok),
             status=STATUS_OK,
         )
         saved = _save(row)
