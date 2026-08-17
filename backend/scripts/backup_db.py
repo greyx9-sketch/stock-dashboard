@@ -19,8 +19,20 @@
 
 실행:
     python backend/scripts/backup_db.py              # 백업 + 검증 + 오래된 것 정리
-    python backend/scripts/backup_db.py --list       # 가진 백업 보기
+    python backend/scripts/backup_db.py --list       # 가진 백업 보기 (복구 절차도 출력)
     python backend/scripts/backup_db.py --keep 30    # 보관 개수 바꾸기
+
+**서버 cron 은 매일 21:20 UTC = 06:20 KST 에 돈다.**
+
+    20 21 * * * cd /opt/stock && ./.venv/bin/python backend/scripts/backup_db.py \
+                >> /opt/stock/data/backup.log 2>&1
+
+시각을 이렇게 고른 이유: **서버 시간대가 UTC 다.** 처음에 03:40 으로 걸었더니 KST 12:40,
+곧 한국장 장중이었다 — 1 OCPU 서버에서 54MB 백업과 gzip 이 5초 폴러와 CPU 를 다툰다.
+KST 로 조용한 창은 미국 애프터마켓이 끝나고(약 06:00) 국내 프리마켓이 시작하기 전(08:00)
+사이뿐이라 06:20 KST 를 골랐다.
+
+cron 시각을 고칠 때는 UTC 로 적어야 한다는 것을 잊지 말 것.
 """
 
 from __future__ import annotations
