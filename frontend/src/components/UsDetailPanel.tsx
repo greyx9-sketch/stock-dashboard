@@ -15,6 +15,7 @@ import type {
 import { FinancialBars } from './FinancialBars'
 import type { FinancialRow } from './FinancialBars'
 import { TenKAnalysis } from './TenKAnalysis'
+import { WatchStar } from './WatchStar'
 import {
   changeColor,
   formatPercent,
@@ -115,6 +116,7 @@ export function UsDetailPanel({ symbol, listItem, live, market }: Props) {
       <div>
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <h2 className="text-xl font-semibold">{name}</h2>
+          <WatchStar symbol={symbol} />
           <span className="tabular text-sm text-neutral-500">
             {symbol}
             {company?.exchange ? ` · ${company.exchange}` : ''}

@@ -425,6 +425,62 @@ export function runKrAnalysis(symbol: string, force = false) {
   return request<KrAnalysis>(`/api/stocks/${symbol}/analysis${query}`, { method: 'POST' })
 }
 
+// ── 관심종목 ───────────────────────────────────────────────────────
+//
+// 국내와 미국을 한 목록에 섞어 담는다. 그래서 항목마다 `market` 이 붙어 있고,
+// 화면은 그것으로 현재가 표기(원/달러)와 상세 화면 종류를 가른다.
+//
+// **현재가는 이 응답에 없다.** 화면이 이미 `/api/prices` 를 5초마다 부르고 있어서,
+// 같은 값을 두 경로로 받으면 둘이 어긋날 때 어느 쪽이 맞는지 알 수 없게 된다.
+// 여기서 오는 것은 등락률 계산의 **기준가**뿐이다 — 그 출처가 시장마다 달라서
+// (국내 KRX 확정 종가 / 미국 직전 일봉 종가) 기준일과 출처를 함께 들고 있다.
+
+export type WatchItem = {
+  symbol: string
+  /** 'KR' | 'US' */
+  market: string
+  name: string
+  group_name: string
+  sort_order: number
+  /** 등락률의 기준가. 못 구했으면 null — 등락률 자리만 비운다 */
+  base_price: string | null
+  base_date: string
+  base_source: string
+}
+
+export type WatchList = {
+  items: WatchItem[]
+  max_items: number
+}
+
+export function fetchWatchlist() {
+  return get<WatchList>('/api/watchlist')
+}
+
+/** 담기. 이미 담긴 종목이면 그대로 돌아온다(오류가 아니다). */
+export function addToWatchlist(symbol: string) {
+  return request<WatchItem>('/api/watchlist', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ symbol }),
+  })
+}
+
+export function removeFromWatchlist(symbol: string) {
+  return request<{ removed: boolean }>(`/api/watchlist/${encodeURIComponent(symbol)}`, {
+    method: 'DELETE',
+  })
+}
+
+/** 한 칸 위/아래로. 이미 끝이면 아무 일도 일어나지 않는다. */
+export function moveInWatchlist(symbol: string, direction: 'up' | 'down') {
+  return request<{ status: string }>(`/api/watchlist/${encodeURIComponent(symbol)}/move`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ direction }),
+  })
+}
+
 export type DisclosureItem = {
   receipt_no: string
   report_name: string

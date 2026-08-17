@@ -25,6 +25,7 @@ from app.routers import (
     stocks,
     us_analysis,
     us_stocks,
+    watchlist,
 )
 from app.services.price_poller import poller
 from app.services.scheduler import scheduler
@@ -67,8 +68,9 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=DEV_FRONTEND_ORIGINS,
-    # 10-K 분석 실행만 POST 다. 나머지는 전부 읽기다.
-    allow_methods=["GET", "POST"],
+    # 읽기(GET)가 대부분이고, 분석 실행과 관심종목 담기가 POST,
+    # 관심종목 빼기가 DELETE 다. 그 외 메서드는 열지 않는다.
+    allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["*"],
 )
 
@@ -86,6 +88,7 @@ app.include_router(financials.router)
 app.include_router(us_analysis.router)
 app.include_router(us_stocks.router)
 app.include_router(macro.router)
+app.include_router(watchlist.router)
 app.include_router(meta.router)
 
 

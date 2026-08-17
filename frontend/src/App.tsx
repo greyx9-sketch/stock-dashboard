@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { KrMarket } from './pages/KrMarket'
 import { UsMarket } from './pages/UsMarket'
+import { Watchlist } from './pages/Watchlist'
 import { MacroStrip } from './components/MacroStrip'
 
 // 화면 전체의 껍데기. 어느 시장을 보고 있는지만 들고 있고, 나머지는 각 페이지가 맡는다.
@@ -9,15 +10,17 @@ import { MacroStrip } from './components/MacroStrip'
 // 기준가를 구하는 방식, 재무의 회계 기준이 전부 다르다. 한 컴포넌트에 넣으면 어느 분기가
 // 어느 시장을 위한 것인지 금세 알 수 없게 된다.
 
-type Country = 'KR' | 'US'
+// 관심종목은 두 시장을 섞어 담으므로 국내·미국과 나란히 놓인 세 번째 탭이다.
+type Tab = 'KR' | 'US' | 'WATCH'
 
-const TABS: { key: Country; label: string }[] = [
+const TABS: { key: Tab; label: string }[] = [
   { key: 'KR', label: '국내' },
   { key: 'US', label: '미국' },
+  { key: 'WATCH', label: '관심' },
 ]
 
 export default function App() {
-  const [country, setCountry] = useState<Country>('KR')
+  const [country, setCountry] = useState<Tab>('KR')
 
   return (
     <>
@@ -44,8 +47,10 @@ export default function App() {
         </div>
       </div>
 
-      {/* key 를 주어 시장을 바꿀 때 이전 화면의 상태가 남지 않게 한다. */}
-      {country === 'KR' ? <KrMarket key="KR" /> : <UsMarket key="US" />}
+      {/* key 를 주어 탭을 바꿀 때 이전 화면의 상태가 남지 않게 한다. */}
+      {country === 'KR' && <KrMarket key="KR" />}
+      {country === 'US' && <UsMarket key="US" />}
+      {country === 'WATCH' && <Watchlist key="WATCH" />}
       </div>
     </>
   )

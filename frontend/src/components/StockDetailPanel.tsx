@@ -6,6 +6,7 @@ import { DisclosureList } from './DisclosureList'
 import { FinancialSummary } from './FinancialSummary'
 import { ReportAnalysis } from './ReportAnalysis'
 import { SupplyDemand } from './SupplyDemand'
+import { WatchStar } from './WatchStar'
 import {
   changeColor,
   formatBigWon,
@@ -73,6 +74,7 @@ export function StockDetailPanel({ symbol, live, market }: Props) {
     <div className="space-y-4">
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <h2 className="text-xl font-semibold">{latest.name}</h2>
+        <WatchStar symbol={symbol} />
         <span className="tabular text-sm text-neutral-500">
           {latest.symbol} · {latest.market}
         </span>

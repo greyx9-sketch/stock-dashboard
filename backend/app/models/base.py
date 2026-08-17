@@ -80,6 +80,7 @@ def init_db() -> None:
         quote,
         us_analysis,
         us_company,
+        watchlist,
     )
 
     Base.metadata.create_all(engine)
