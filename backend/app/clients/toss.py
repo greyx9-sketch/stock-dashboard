@@ -296,6 +296,53 @@ class TossClient:
         return await self._request("/api/v1/market-calendar/US", group="MARKET_INFO",
                                    params={"date": day} if day else None)
 
+    async def get_market_indicators(self, symbols: list[str]) -> list[dict[str, Any]]:
+        """시장 지표 현재가. **국내 지수·국채만** 제공된다(미국 지수는 없다).
+
+        응답이 리스트다 — 다른 엔드포인트처럼 `{"prices": [...]}` 로 감싸져 있지 않다.
+        각 항목에 `symbol`·`lastPrice`만 있고 **기준가나 등락률이 없다.**
+        등락률이 필요하면 `get_indicator_candles` 로 전일 종가를 받아 직접 계산한다.
+
+        쓸 수 있는 심볼은 문서가 "심볼 카탈로그" 로만 언급하고 목록을 공개하지 않는다.
+        라이브로 확인한 것: `KOSPI`, `KOSDAQ` 은 동작한다. 국채는 KTB3Y·BOND3Y 등
+        20가지를 시도했으나 전부 `unsupported-symbol` 이었다 — 국고채 금리는 한국은행
+        쪽에서 받는 편이 확실하다.
+        """
+        return await self._request(
+            "/api/v1/market-indicators/prices",
+            group="MARKET_INDICATOR_PRICE",
+            params={"symbols": ",".join(symbols)},
+        )
+
+    async def get_indicator_candles(
+        self, symbol: str, *, interval: str = "1d", count: int = 2
+    ) -> list[dict[str, Any]]:
+        """시장 지표 캔들. 최신순으로 온다(첫 항목이 가장 최근).
+
+        지표 현재가에 기준가가 없어서, 등락률을 계산하려면 이걸로 전일 종가를 받아야 한다.
+        """
+        payload = await self._request(
+            f"/api/v1/market-indicators/{symbol}/candles",
+            group="MARKET_INDICATOR_CHART",
+            params={"interval": interval, "count": count},
+        )
+        return payload.get("candles") or []
+
+    async def get_exchange_rate(
+        self, base: str = "USD", quote: str = "KRW"
+    ) -> dict[str, Any]:
+        """환율. 매매기준율(`rate`)과 중간값(`midRate`)이 함께 온다.
+
+        `validFrom`·`validUntil` 로 유효 구간이 오는데 5분 단위다 — 실시간이지만
+        초 단위로 움직이지는 않는다. 화면에 기준 시각을 함께 보여주는 편이 정확하다.
+        `rateChangeType` 은 UP/DOWN/EQUAL 이다.
+        """
+        return await self._request(
+            "/api/v1/exchange-rate",
+            group="MARKET_INFO",
+            params={"baseCurrency": base, "quoteCurrency": quote},
+        )
+
     async def get_rankings(
         self,
         *,

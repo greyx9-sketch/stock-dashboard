@@ -310,6 +310,40 @@ export function runUsAnalysis(ticker: string, force = false) {
   })
 }
 
+// ── 매크로 스트립 ──────────────────────────────────────────────────
+//
+// 값은 서버에서 이미 반올림·쉼표까지 넣은 **문자열**로 온다. 지표마다 표기 자리수가
+// 다르고(환율 1자리, 지수 2자리, 금리 2자리) 그 판단이 서버에 있어서다.
+// 화면에서 다시 숫자로 바꿔 계산하지 않는다.
+
+export type MacroItem = {
+  code: string
+  label: string
+  /** 화면에 그대로 쓸 문자열 */
+  value: string
+  /** '' | '원' | '%' | '$' */
+  unit: string
+  /** 등락률(%). 없는 지표는 null */
+  change_rate: string | null
+  /** 기준 시각 또는 기준일. 빈 문자열이면 표시하지 않는다 */
+  as_of: string
+  source: string
+  /** 화면에 함께 밝혀야 하는 단서 (예: SPY 는 지수가 아님) */
+  note: string
+  /** 지금 못 받아 저장된 값을 보여주는 중 */
+  stale: boolean
+}
+
+export type MacroStrip = {
+  items: MacroItem[]
+  /** 못 받은 지표의 이유. 비어 있으면 전부 정상 */
+  errors: string[]
+}
+
+export function fetchMacro() {
+  return get<MacroStrip>('/api/macro')
+}
+
 // ── 국내 사업보고서 서술 분석 ───────────────────────────────────────
 //
 // 미국 10-K 분석과 같은 규칙이다 — GET 은 저장된 것만 읽어 공짜, POST 만 돈이 든다.

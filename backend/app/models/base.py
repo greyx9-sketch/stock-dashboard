@@ -76,6 +76,7 @@ def init_db() -> None:
         corp,
         dart_analysis,
         financial,
+        macro,
         quote,
         us_analysis,
         us_company,

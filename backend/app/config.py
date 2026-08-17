@@ -43,7 +43,12 @@ class Settings(BaseSettings):
     # 코드에 상한을 둔다. 콘솔의 월 상한과 별개로 동작하는 안쪽 방어선이다.
     analysis_daily_limit: int = 20
 
-    # 외부 공개용 공용 비밀번호 (8단계)
+    # FRED (세인트루이스 연준) — 매크로 스트립의 WTI 유가.
+    # 나머지 매크로 지표는 `시황` 프로젝트의 공개 결과물을 읽으므로 키가 필요 없다.
+    fred_api_key: str | None = None
+
+    # 외부 공개용 공용 아이디·비밀번호 (8단계)
+    site_user: str | None = None
     site_password: str | None = None
 
     # 앱 설정

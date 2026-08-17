@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { KrMarket } from './pages/KrMarket'
 import { UsMarket } from './pages/UsMarket'
+import { MacroStrip } from './components/MacroStrip'
 
 // 화면 전체의 껍데기. 어느 시장을 보고 있는지만 들고 있고, 나머지는 각 페이지가 맡는다.
 //
@@ -19,7 +20,11 @@ export default function App() {
   const [country, setCountry] = useState<Country>('KR')
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-6">
+    <>
+      {/* 매크로 띠는 시장 탭 바깥에 둔다. 탭을 바꿔도 다시 받지 않게 하려는 것이다. */}
+      <MacroStrip />
+
+      <div className="mx-auto max-w-7xl px-4 py-6">
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <h1 className="text-2xl font-semibold">주식 시세</h1>
         <div className="flex gap-1 rounded-md bg-neutral-900 p-0.5">
@@ -41,6 +46,7 @@ export default function App() {
 
       {/* key 를 주어 시장을 바꿀 때 이전 화면의 상태가 남지 않게 한다. */}
       {country === 'KR' ? <KrMarket key="KR" /> : <UsMarket key="US" />}
-    </div>
+      </div>
+    </>
   )
 }

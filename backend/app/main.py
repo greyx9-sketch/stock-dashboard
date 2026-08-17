@@ -18,6 +18,7 @@ from app.routers import (
     disclosures,
     financials,
     kr_analysis,
+    macro,
     meta,
     prices,
     stocks,
@@ -82,6 +83,7 @@ app.include_router(financials.router)
 # `/analysis/...` 를 티커로 오인해 먼저 잡는 것을 막는다.
 app.include_router(us_analysis.router)
 app.include_router(us_stocks.router)
+app.include_router(macro.router)
 app.include_router(meta.router)
 
 
