@@ -39,6 +39,9 @@ class Settings(BaseSettings):
 
     # Anthropic — 10-K 서술 분석 (6단계)
     anthropic_api_key: str | None = None
+    # 하루에 새로 분석할 수 있는 문서 수. 이 프로젝트에서 유일하게 돈이 나가는 경로라
+    # 코드에 상한을 둔다. 콘솔의 월 상한과 별개로 동작하는 안쪽 방어선이다.
+    analysis_daily_limit: int = 20
 
     # 외부 공개용 공용 비밀번호 (8단계)
     site_password: str | None = None

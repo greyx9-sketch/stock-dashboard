@@ -14,7 +14,15 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import PROJECT_ROOT, get_settings
 from app.models.base import init_db
-from app.routers import disclosures, financials, meta, prices, stocks, us_stocks
+from app.routers import (
+    disclosures,
+    financials,
+    meta,
+    prices,
+    stocks,
+    us_analysis,
+    us_stocks,
+)
 from app.services.price_poller import poller
 from app.services.scheduler import scheduler
 
@@ -56,7 +64,8 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=DEV_FRONTEND_ORIGINS,
-    allow_methods=["GET"],
+    # 10-K 분석 실행만 POST 다. 나머지는 전부 읽기다.
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
@@ -65,6 +74,9 @@ app.include_router(prices.router)
 app.include_router(disclosures.router)
 app.include_router(disclosures.meta_router)
 app.include_router(financials.router)
+# 분석 라우터를 us_stocks 보다 먼저 등록한다. us_stocks 의 `/{ticker}` 포괄 경로가
+# `/analysis/...` 를 티커로 오인해 먼저 잡는 것을 막는다.
+app.include_router(us_analysis.router)
 app.include_router(us_stocks.router)
 app.include_router(meta.router)
 
