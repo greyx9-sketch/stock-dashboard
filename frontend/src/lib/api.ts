@@ -94,8 +94,8 @@ export type PricesResponse = {
 export type SortKey = 'market_cap' | 'trade_value' | 'volume' | 'change_rate' | 'close'
 export type MarketFilter = 'KOSPI' | 'KOSDAQ' | 'KONEX'
 
-async function get<T>(path: string): Promise<T> {
-  const response = await fetch(path)
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(path, init)
   if (!response.ok) {
     // 백엔드는 실패 이유를 detail 에 한국어로 담아 보낸다. 그대로 화면에 보여준다.
     let detail = `요청이 실패했습니다 (HTTP ${response.status})`
@@ -108,6 +108,10 @@ async function get<T>(path: string): Promise<T> {
     throw new Error(detail)
   }
   return response.json() as Promise<T>
+}
+
+function get<T>(path: string): Promise<T> {
+  return request<T>(path)
 }
 
 export function fetchStatus() {
@@ -259,6 +263,51 @@ export function fetchUsFinancials(ticker: string, years = 6) {
 
 export function fetchUsFilings(ticker: string, count = 15) {
   return get<UsFilingItem[]>(`/api/us/${encodeURIComponent(ticker)}/filings?count=${count}`)
+}
+
+// ── 10-K 서술 분석 (Anthropic) ─────────────────────────────────────
+//
+// 조회(GET)는 저장된 것만 읽으므로 공짜다. 실행(POST)만 돈이 든다. 화면은 이 구분을
+// 그대로 따른다 — 상세를 열면 GET 만 나가고, POST 는 사용자가 버튼을 눌러야 나간다.
+
+export type UsRiskItem = {
+  title: string
+  why_it_matters: string
+  /** 모든 보고서에 붙는 형식적 위험이면 true */
+  is_boilerplate: boolean
+}
+
+export type UsAnalysis = {
+  /** ok=분석 있음 / none=아직 안 함 / failed=실패 */
+  status: 'ok' | 'none' | 'failed'
+  ticker: string
+  fiscal_year: number | null
+  period_end: string | null
+  filed_date: string | null
+  source_url: string | null
+  model: string | null
+  generated_at: string | null
+  sections: string[]
+  truncated: string[]
+  business_summary: string | null
+  segments: string[]
+  key_risks: UsRiskItem[]
+  mdna_points: string[]
+  moat_and_competition: string | null
+  error: string | null
+}
+
+/** 저장된 분석 조회. 새로 분석하지 않으므로 비용이 들지 않는다. */
+export function fetchUsAnalysis(ticker: string) {
+  return get<UsAnalysis>(`/api/us/${encodeURIComponent(ticker)}/analysis`)
+}
+
+/** 분석 실행. 30초~2분 걸리고 문서 한 건당 비용이 발생한다. */
+export function runUsAnalysis(ticker: string, force = false) {
+  const query = force ? '?force=true' : ''
+  return request<UsAnalysis>(`/api/us/${encodeURIComponent(ticker)}/analysis${query}`, {
+    method: 'POST',
+  })
 }
 
 export type DisclosureItem = {

@@ -14,6 +14,7 @@ import type {
 } from '../lib/api'
 import { FinancialBars } from './FinancialBars'
 import type { FinancialRow } from './FinancialBars'
+import { TenKAnalysis } from './TenKAnalysis'
 import {
   changeColor,
   formatPercent,
@@ -161,6 +162,9 @@ export function UsDetailPanel({ symbol, listItem, live, market }: Props) {
           {notes.financials ?? (loading ? '재무 데이터를 받는 중…' : '재무 데이터가 없습니다.')}
         </div>
       )}
+
+      {/* 10-K 를 내는 종목에만 붙인다. ETF·DR 은 애초에 분석할 문서가 없다. */}
+      {hasSecFilings && <TenKAnalysis ticker={symbol} />}
 
       <div className="rounded-lg border border-neutral-800 bg-neutral-900/40">
         <div className="border-b border-neutral-800 px-3 py-2 text-xs text-neutral-400">

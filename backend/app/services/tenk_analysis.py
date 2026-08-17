@@ -43,15 +43,22 @@ from app.services.tenk_extract import (
 logger = logging.getLogger(__name__)
 
 MODEL = "claude-sonnet-5"
-# 프롬프트나 스키마를 고치면 이 숫자를 올린다. 옛 결과를 지우지 않고 새로 분석된다.
-PROMPT_VERSION = 1
+# 프롬프트·스키마·effort 를 고치면 이 숫자를 올린다. 옛 결과를 지우지 않고 새로 분석된다.
+#
+# v2: effort 를 medium → high 로 올렸다. medium 에서 MSFT 가 business_summary 만 채우고
+#     나머지 네 필드를 빈 채로 돌려줬다(출력 430토큰, 정상은 2,600). 입력은 멀쩡했다 —
+#     Item 1A 가 "ITEM 1A. RISK FACTORS" 에서 정확히 시작한 것을 추출기로 확인했다.
+#     Sonnet 5 는 낮은 effort 에서 시킨 만큼만 하고 더 파고들지 않는 성향이 있다.
+PROMPT_VERSION = 2
 
 MAX_OUTPUT_TOKENS = 16_000
 # 섹션 글자 상한(18만 자 ≈ 4.5만 토큰) 때문에 실제로는 거의 걸리지 않는다.
 # 토큰화가 유난히 불리한 문서를 위한 마지막 방어선이다.
 MAX_INPUT_TOKENS = 180_000
 TRIM_ATTEMPTS = 3
-EFFORT = "medium"
+# 낮추지 말 것 — PROMPT_VERSION 주석의 medium 실패 사례를 참고. 몇 초 더 걸리는 대신
+# 다섯 필드를 제대로 채운다.
+EFFORT = "high"
 
 # 비용 표시는 **정가 기준 추정**이다. 도입가 기간에는 실제 청구가 이보다 적다.
 # 적게 추정하는 쪽이 위험하므로 일부러 비싼 쪽으로 잡는다.
@@ -353,12 +360,28 @@ async def _call_model(
             f" (종료 사유: {response.stop_reason})"
         )
 
+    # 형식은 맞는데 알맹이가 빈 응답을 걸러낸다. 이걸 저장해 버리면 캐시가 영원히
+    # 껍데기를 돌려주고, 사용자는 다시 시도할 방법이 없다 — 캐시가 독이 되는 경우다.
+    if not _is_complete(response.parsed_output):
+        raise AnalysisError(
+            "분석 결과가 비어 있어 저장하지 않았습니다. 다시 시도해 주세요."
+        )
+
     return (
         response.parsed_output,
         sections,
         response.usage.input_tokens,
         response.usage.output_tokens,
     )
+
+
+def _is_complete(content: TenKAnalysisContent) -> bool:
+    """알맹이가 들어 있는 응답인지.
+
+    사업 요약과 위험요인 둘 다 있어야 분석이라 부를 만하다. 경영진 논의는 문서에 따라
+    참조 형식뿐일 수 있으므로 필수로 두지 않는다.
+    """
+    return bool(content.business_summary.strip()) and bool(content.key_risks)
 
 
 def _cost_micro_usd(input_tokens: int, output_tokens: int) -> int:
