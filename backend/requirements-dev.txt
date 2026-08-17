@@ -1,0 +1,12 @@
+# 개발·테스트에만 필요한 것. 서버에는 설치하지 않는다.
+#
+# 서버가 메모리 1GB 라서 운영에 쓰지 않는 패키지를 올리지 않는다.
+# deploy/update.sh 는 requirements.txt 만 설치한다.
+#
+#   pip install -r backend/requirements-dev.txt
+#   pytest backend/tests          # 저장소 루트에서
+#   cd backend && pytest          # backend 안에서
+
+-r requirements.txt
+
+pytest               # 테스트 실행기

@@ -218,11 +218,25 @@ cd backend && python -m uvicorn app.main:app --port 8000
 넣어야 하는지* 알려주며 멈춘다. 최소한 토스증권 키(시세)와 `SEC_USER_AGENT`(미국 재무)가 있으면
 대부분이 동작한다.
 
-API 문서는 실행 후 `/docs` 에 있다. 개발용 점검 스크립트도 있다:
+API 문서는 실행 후 `/docs` 에 있다.
+
+### 테스트
 
 ```bash
-python backend/scripts/check_tenk.py AAPL JPM WMT   # 10-K 섹션 추출 (API 호출 없음)
-python backend/scripts/check_report.py 005930       # 사업보고서 절 추출 (API 호출 없음)
+pip install -r backend/requirements-dev.txt
+pytest backend/tests
+```
+
+**네트워크를 부르지 않고 API 키도 필요 없다.** 전부 순수 함수 대상이라 1초 안에 끝난다.
+대상은 실제로 버그가 났던 곳들이다 — 공시 원문 추출기(10-K · 사업보고서), 등락률 계산,
+비용 계산, 매크로 단위 변환. 아래 "실제 문서를 만나며 고친 것들" 의 실패 사례가 그대로
+회귀 테스트로 들어가 있다.
+
+실제 문서를 받아 눈으로 확인하는 점검 스크립트도 따로 있다(외부 API 호출):
+
+```bash
+python backend/scripts/check_tenk.py AAPL JPM WMT   # 10-K 섹션 추출 (LLM 호출 없음)
+python backend/scripts/check_report.py 005930       # 사업보고서 절 추출 (LLM 호출 없음)
 python backend/scripts/check_krx.py                 # KRX 확정 종가 ↔ 토스 기준가 대조
 ```
 
@@ -232,7 +246,7 @@ python backend/scripts/check_krx.py                 # KRX 확정 종가 ↔ 토�
 
 정직하게 적어 둔다.
 
-- 테스트가 없다. 추출기·등락률 계산·비용 상한처럼 깨지기 쉬운 곳부터 붙일 계획이다.
+- 테스트가 순수 함수(추출기·계산)만 덮는다. 라우터·서비스 계층의 통합 테스트가 없다.
 - 수급 동향(투자자별 매매동향 · 공매도 · 프로그램매매 · 신용거래 · 대차거래)은 토스 API 가
   제공하는데 아직 화면에 없다.
 - 관심종목 · 종목 메모 · 일정(실적·배당) 기능이 없다.

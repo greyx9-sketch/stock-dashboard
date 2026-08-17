@@ -283,13 +283,26 @@ _MDNA_HEADING = re.compile(
 # 목차와 머리글은 짧은 줄만 이어지고, 본문 시작에는 긴 문단이 온다.
 _MDNA_PROBE = 1_000
 _MDNA_PARAGRAPH_CHARS = 180
-# ①은 참조 문장 안에서 제목을 한 번 더 부르는 것이라 Item 7 바로 뒤에 붙어 있다. 건너뛴다.
-_MDNA_SKIP_AFTER_ITEM7 = 2_000
 
 
 def _has_paragraph(window: str) -> bool:
     """긴 줄이 하나라도 있으면 서술 문단으로 본다."""
     return any(len(line) >= _MDNA_PARAGRAPH_CHARS for line in window.split("\n"))
+
+
+def _item7_block_end(text: str) -> int:
+    """Item 7 항목 블록이 끝나는 위치.
+
+    참조 형식 문서에서 "…쪽 참조" 문장이 사는 구간의 끝이다. `_pick_span` 과 달리 길이
+    하한을 적용하지 않는다 — 참조뿐인 블록은 원래 짧고, 그 짧음이 여기서는 정상이다.
+    Item 7 을 못 찾으면 0(문서 처음부터)을 돌려준다.
+    """
+    starts = _positions(text, "7", require_title=True)
+    if not starts:
+        return 0
+    ends = sorted(p for item in ("7a", "8") for p in _positions(text, item))
+    later = [e for e in ends if e > starts[-1]]
+    return later[0] if later else starts[-1]
 
 
 def _mdna_by_heading(text: str, after: int) -> tuple[int, int] | None:
@@ -326,9 +339,10 @@ def extract_sections(text: str) -> TenKSections:
     # Item 7 자리에 "…쪽 참조" 한 줄만 있는 문서면 본문을 자체 제목으로 다시 찾는다.
     from_reference = False
     if not mdna:
-        item7 = _positions(text, "7", require_title=True)
-        after = item7[-1] + _MDNA_SKIP_AFTER_ITEM7 if item7 else 0
-        span = _mdna_by_heading(text, after=after)
+        # 참조 문장은 Item 7 과 그 다음 항목 사이에 있고, 거기서 제목을 한 번 더 부른다
+        # ("…entitled 'MD&A,' appears on pages 46-160"). 그 구간을 지나서부터 찾는다.
+        # 고정된 글자 수를 건너뛰면 문서마다 간격이 달라 빗나간다.
+        span = _mdna_by_heading(text, after=_item7_block_end(text))
         if span is not None:
             mdna = text[span[0] : span[1]].strip()
             cut_mdna = span[1] - span[0] >= LIMIT_MDNA
