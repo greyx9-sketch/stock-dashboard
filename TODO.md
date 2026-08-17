@@ -14,7 +14,7 @@
 ## 📍 다음에 여기서 이어서 한다
 
 **지금 상태**: 대시보드가 인터넷에 떠 있고 국내·미국 화면이 정상 동작한다.
-**http://129.225.188.89** · 아이디 `view` · 비밀번호는 `.env` 의 `SITE_PASSWORD`
+**http://129.225.188.89** · 아이디·비밀번호는 `.env` 의 `SITE_USER`·`SITE_PASSWORD`
 
 기능은 8단계까지 전부 끝났다. 아래는 **하면 좋은 것**이지 안 하면 망가지는 것이 아니다.
 급한 순서대로 적었다.
@@ -85,13 +85,17 @@
 ※ 휴장 중에도 토스가 마지막 체결가를 내려주는 것은 이미 확인했다. 시세 경로 자체는
 살아 있고, 남은 건 국내 장중 폴링 동작뿐이다.
 
-### 3. 비밀번호 (선택)
+### 2. 아이디·비밀번호 (선택)
 
-지금 4자다. bcrypt cost 14 라 크랙은 사실상 불가능하지만, 1 OCPU 서버라 무작위 시도가
-몰리면 CPU 가 눌릴 수 있다. 바꾸려면 `.env` 의 `SITE_PASSWORD` 만 고치고 알려주면 된다
-(서버에서 `deploy/setup_caddy.sh` 를 다시 돌리면 반영된다).
+둘 다 `.env` 의 `SITE_USER`·`SITE_PASSWORD` 한 곳에서 관리한다(2026-08-17 부터).
+고친 뒤 서버에서 `bash /opt/stock/deploy/setup_caddy.sh` 를 돌리면 반영된다 —
+Caddyfile 은 손대지 않는다.
 
-### 6. 도메인 + HTTPS (선택)
+비밀번호가 지금 4자다. bcrypt cost 14 라 크랙은 사실상 불가능하지만, 1 OCPU 서버라
+무작위 시도가 몰리면 CPU 가 눌릴 수 있다. 바꾸려면 `.env` 만 고치고 알려주면 나머지는
+클로드가 한다(새 비밀번호를 채팅에 적을 필요 없다).
+
+### 4. 도메인 + HTTPS (선택)
 
 지금은 IP 접속이라 **HTTPS 가 아니다** — 비밀번호가 암호화되지 않고 오간다.
 읽기 전용 대시보드라 피해는 제한적이지만, 이력서에 적는 주소라면 도메인이 보기에도 낫다.
@@ -207,13 +211,12 @@
 - [x] **프로그램 설치·코드 배포** — 완료. Python 3.12.3 / Node 22.23.2 / Caddy 2.11.4,
       `/opt/stock` 에 클론, venv·프론트 빌드 성공, systemd 등록 후 `/health` → `{"status":"ok"}`.
       로컬 `data/app.db` 를 그대로 올려 KRX 232,953행·DART 3,981건·SEC 10,387건을 재수집 없이 이어받았다.
-- [x] **접근 비밀번호 정하기** — 완료 (2026-08-15). `.env` 의 `SITE_PASSWORD` 에 있고,
-      서버에서 해시로 바꿔 `/etc/caddy/Caddyfile` 에 넣었다. 아이디는 `view`.
+- [x] **접근 아이디·비밀번호 정하기** — 완료 (2026-08-15, 2026-08-17 개선).
+      둘 다 `.env` 의 `SITE_USER`·`SITE_PASSWORD` 에 있다. 서버에서 해시로 바꿔
+      `/etc/caddy/Caddyfile` 에 넣는다 — Caddyfile 은 자리표시자만 들고 있고 손대지 않는다.
       ※ 안내서에 빠져 있던 함정 하나를 이번에 찾아 보완했다 — `/var/log/caddy` 폴더를 미리
-      만들고 caddy 소유로 바꾸지 않으면 **Caddy 가 기동 자체를 못 한다**(10-1 단계).
-      ※ 비밀번호가 4자다. 브루트포스 자체는 bcrypt cost 14 라 사실상 불가능하지만,
-      1 OCPU 서버라 시도가 몰리면 CPU 가 눌릴 수 있다. 길게 바꾸고 싶으면
-      `.env` 의 `SITE_PASSWORD` 를 고치고 `deploy/setup_caddy.sh` 를 다시 돌리면 된다.
+      만들고 caddy 소유로 바꾸지 않으면 **Caddy 가 기동 자체를 못 한다**(setup_caddy.sh 가 처리).
+      ※ 비밀번호가 4자다. 위 "2. 아이디·비밀번호" 절 참고.
 - [x] **서버 IP를 토스 허용 IP에 등록** — 완료 (2026-08-15). **129.225.188.89**
       등록 전에는 `IP address not allowed (code=access_denied)` 가 났고, 등록 후 사라졌다.
 - [x] **재부팅 내구성 확인** — `sudo systemctl reboot` 후 **30초 만에 자동 복구**.
@@ -242,7 +245,7 @@ curl -s http://127.0.0.1:8000/health
 # 로그 실시간
 sudo journalctl -u stock-dashboard -f
 
-# 비밀번호 바꾼 뒤 (.env 수정 후)
+# 아이디·비밀번호 바꾼 뒤 (.env 의 SITE_USER / SITE_PASSWORD 수정 후)
 bash /opt/stock/deploy/setup_caddy.sh
 ```
 
