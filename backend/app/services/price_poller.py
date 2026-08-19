@@ -124,6 +124,51 @@ def _parse(value: str | None) -> datetime | None:
         return None
 
 
+@dataclass(frozen=True)
+class _Window:
+    """세션 하나. 어느 영업일에 속한 것인지도 함께 든다."""
+
+    phase: str
+    start: datetime
+    end: datetime
+    trade_date: str | None
+
+
+def _windows(calendar: dict[str, Any], order, korea: bool) -> list[_Window]:
+    """전일·당일·익일 세 영업일의 세션을 시간순 하나의 목록으로 펼친다.
+
+    **세 날을 다 보는 것이 핵심이다.** 미국 정규장은 22:30 에 시작해 다음 날 05:00 에
+    끝나고, 애프터마켓은 05:00~08:50 이다. 한국 시간으로 보면 **지금 진행 중인 세션이
+    "어제" 영업일에 속해 있는 시간대가 매일 세 시간 넘게 생긴다.**
+
+    당일만 보면 그 시간 동안 "장 마감"으로 판정되어 배지가 틀리게 뜨고, 폴러가 갱신을
+    멈춰 현재가가 굳는다. 실제로 그렇게 동작하고 있었다.
+    """
+    result: list[_Window] = []
+    for key in ("previousBusinessDay", "today", "nextBusinessDay"):
+        day = calendar.get(key) or {}
+        sessions = _sessions_of(day, order, korea)
+        if not sessions:
+            continue
+        for phase, name in order:
+            window = sessions.get(name) or {}
+            begins = _parse(window.get("startTime"))
+            ends = _parse(window.get("endTime"))
+            if begins and ends:
+                result.append(_Window(phase, begins, ends, day.get("date")))
+    result.sort(key=lambda w: w.start)
+    return result
+
+
+def _sessions_of(day: dict[str, Any], order, korea: bool) -> dict[str, Any] | None:
+    """그 날의 세션 묶음. 휴장이면 None."""
+    if korea:
+        # 국내는 한 겹 안에 들어 있다. 휴장일이면 그 값이 통째로 null 이다.
+        return day.get("integrated")
+    # 미국은 최상위에 있다. 세션이 하나도 없으면 휴장으로 본다.
+    return day if any(day.get(name) for _, name in order) else None
+
+
 def resolve_phase(
     calendar: dict[str, Any] | None, now: datetime, *, country: str = "KR"
 ) -> MarketState:
@@ -131,49 +176,39 @@ def resolve_phase(
 
     국내: 세션이 `integrated`(KRX+NXT 통합) 안에 있고, 휴장일이면 그 값이 null 이다.
     미국: 세션이 최상위에 있고, 토스 데이마켓(09:00~17:00 KST)이 하나 더 있다.
+
+    **당일만 보지 않는다.** 미국 세션은 한국 시간 자정을 넘어 이어지므로, 지금 열려 있는
+    세션이 전 영업일에 속할 수 있다(`_windows` 주석 참고).
     """
     if not calendar:
         return MarketState("UNKNOWN", PHASE_LABEL["UNKNOWN"], None, None, None)
 
     korea = country == "KR"
     order = KR_SESSION_ORDER if korea else US_SESSION_ORDER
-    first_key = order[0][1]
 
     today = calendar.get("today") or {}
-    next_day = calendar.get("nextBusinessDay") or {}
+    windows = _windows(calendar, order, korea)
 
-    def sessions_of(day: dict[str, Any]) -> dict[str, Any] | None:
-        # 국내는 한 겹 안에 들어 있다. 휴장일이면 그 값이 통째로 null 이다.
-        if korea:
-            return day.get("integrated")
-        # 미국은 최상위에 있다. 세션이 하나도 없으면 휴장으로 본다.
-        return day if any(day.get(key) for _, key in order) else None
+    # 다음에 열리는 세션. 지금 열려 있든 아니든 화면에 필요하다.
+    upcoming = next((w.start for w in windows if w.start > now), None)
+    next_open = upcoming.isoformat() if upcoming else None
 
-    sessions = sessions_of(today)
-    next_sessions = sessions_of(next_day) or {}
-    next_open = ((next_sessions.get(first_key)) or {}).get("startTime")
-
-    if not sessions:
-        return MarketState("HOLIDAY", PHASE_LABEL["HOLIDAY"], today.get("date"), next_open, None)
-
-    for phase, key in order:
-        window = sessions.get(key) or {}
-        start = _parse(window.get("startTime"))
-        end = _parse(window.get("endTime"))
-        if start and end and start <= now < end:
+    for window in windows:
+        if window.start <= now < window.end:
             return MarketState(
-                phase,  # type: ignore[arg-type]
-                PHASE_LABEL[phase],
-                today.get("date"),
+                window.phase,  # type: ignore[arg-type]
+                PHASE_LABEL[window.phase],
+                # 진행 중인 세션이 속한 영업일을 쓴다. 자정을 넘긴 미국 세션에서는
+                # 달력의 "오늘"과 다르다.
+                window.trade_date,
                 next_open,
-                window.get("endTime"),
+                window.end.isoformat(),
             )
 
-    # 어느 세션에도 속하지 않는다. 개장 전이면 오늘 첫 세션이, 마감 후면 다음 영업일이 답이다.
-    first_start = (sessions.get(first_key) or {}).get("startTime")
-    parsed_first = _parse(first_start)
-    upcoming = first_start if (parsed_first and now < parsed_first) else next_open
-    return MarketState("CLOSED", PHASE_LABEL["CLOSED"], today.get("date"), upcoming, None)
+    # 열려 있는 세션이 없다. 오늘 자체가 휴장인지, 아니면 장 사이 시간인지 가른다.
+    if not _sessions_of(today, order, korea):
+        return MarketState("HOLIDAY", PHASE_LABEL["HOLIDAY"], today.get("date"), next_open, None)
+    return MarketState("CLOSED", PHASE_LABEL["CLOSED"], today.get("date"), next_open, None)
 
 
 class PricePoller:
