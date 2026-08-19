@@ -3,6 +3,7 @@ import { KrMarket } from './pages/KrMarket'
 import { UsMarket } from './pages/UsMarket'
 import { Watchlist } from './pages/Watchlist'
 import { MacroStrip } from './components/MacroStrip'
+import { SystemBanner } from './components/SystemBanner'
 
 // 화면 전체의 껍데기. 어느 시장을 보고 있는지만 들고 있고, 나머지는 각 페이지가 맡는다.
 //
@@ -24,6 +25,9 @@ export default function App() {
 
   return (
     <>
+      {/* 고장 알림은 맨 위에 둔다. 숫자가 이상해 보일 때 원인을 먼저 보게 하려는 것이다. */}
+      <SystemBanner />
+
       {/* 매크로 띠는 시장 탭 바깥에 둔다. 탭을 바꿔도 다시 받지 않게 하려는 것이다. */}
       <MacroStrip />
 

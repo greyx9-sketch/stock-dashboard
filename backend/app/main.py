@@ -18,6 +18,7 @@ from app.routers import (
     disclosures,
     financials,
     flows,
+    health as health_router,
     kr_analysis,
     macro,
     meta,
@@ -27,6 +28,7 @@ from app.routers import (
     us_stocks,
     watchlist,
 )
+from app.services import health as health_service
 from app.services.price_poller import poller
 from app.services.scheduler import scheduler
 
@@ -74,6 +76,27 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.middleware("http")
+async def record_server_errors(request, call_next):
+    """5xx 를 기록해 둔다. 가동 상태 판단과 알림이 이 기록을 근거로 쓴다.
+
+    로그(journalctl)에도 남지만, 사람이 서버에 들어가 봐야 보인다. 앱이 스스로
+    "최근 30분에 오류가 몇 건 났다"고 답할 수 있어야 알림을 보낼 수 있다.
+
+    **여기서 예외를 삼키지 않는다.** 잡아서 기록만 하고 그대로 다시 던진다 —
+    FastAPI 의 기본 처리(500 응답 + 스택트레이스 로그)가 그대로 일어나야 한다.
+    """
+    try:
+        response = await call_next(request)
+    except Exception as exc:
+        health_service.record_error(request.url.path, 500, f"{type(exc).__name__}: {exc}")
+        raise
+    if response.status_code >= 500:
+        health_service.record_error(request.url.path, response.status_code, "")
+    return response
+
+
 # 국내 분석 라우터를 stocks 보다 먼저 등록한다. stocks 의 `/{symbol}` 포괄 경로가
 # 먼저 잡으면 `/analysis` 가 종목 코드로 오인된다(미국 쪽과 같은 이유).
 app.include_router(kr_analysis.router)
@@ -89,6 +112,7 @@ app.include_router(us_analysis.router)
 app.include_router(us_stocks.router)
 app.include_router(macro.router)
 app.include_router(watchlist.router)
+app.include_router(health_router.router)
 app.include_router(meta.router)
 
 

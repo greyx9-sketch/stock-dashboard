@@ -425,6 +425,32 @@ export function runKrAnalysis(symbol: string, force = false) {
   return request<KrAnalysis>(`/api/stocks/${symbol}/analysis${query}`, { method: 'POST' })
 }
 
+// ── 가동 상태 ───────────────────────────────────────────────────────
+//
+// 앱이 스스로 판단한 상태다. `/health` 는 살아 있는지만 답하고, 이쪽은 무엇이 어떻게
+// 고장났는지까지 답한다. 서버의 감시 스크립트도 같은 응답을 읽는다 — 화면과 알림이
+// 어긋나지 않게 하려는 것이다.
+
+export type HealthCheck = {
+  name: string
+  /** 'ok' | 'degraded' | 'down' */
+  status: string
+  detail: string
+}
+
+export type HealthDetail = {
+  status: string
+  /** 문제를 한 줄로 요약한 것 */
+  summary: string
+  uptime_seconds: number
+  checks: HealthCheck[]
+  recent_errors: { at: string; path: string; status: number; detail: string }[]
+}
+
+export function fetchHealth() {
+  return get<HealthDetail>('/api/health/detail')
+}
+
 // ── 관심종목 ───────────────────────────────────────────────────────
 //
 // 국내와 미국을 한 목록에 섞어 담는다. 그래서 항목마다 `market` 이 붙어 있고,

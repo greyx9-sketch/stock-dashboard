@@ -51,6 +51,10 @@ class Settings(BaseSettings):
     site_user: str | None = None
     site_password: str | None = None
 
+    # 앱 오류 알림 — 디스코드·슬랙 웹훅 주소.
+    # 비어 있으면 감시는 그대로 돌고 알림만 건너뛴다. 없다고 서버가 멈추지 않는다.
+    alert_webhook_url: str | None = None
+
     # 앱 설정
     app_env: str = "development"
     database_url: str = "sqlite:///./data/app.db"
