@@ -51,9 +51,14 @@ class Settings(BaseSettings):
     site_user: str | None = None
     site_password: str | None = None
 
-    # 앱 오류 알림 — 디스코드·슬랙 웹훅 주소.
+    # 앱 오류 알림을 보낼 주소. 텔레그램·디스코드·슬랙 셋 다 이 한 칸으로 받는다.
     # 비어 있으면 감시는 그대로 돌고 알림만 건너뛴다. 없다고 서버가 멈추지 않는다.
     alert_webhook_url: str | None = None
+
+    # 텔레그램 봇 토큰. 위 주소를 만들 때만 쓴다
+    # (`watchdog.py --telegram-setup` 이 이 값으로 chat_id 를 찾아 주소를 완성한다).
+    # 주소가 완성된 뒤에는 알림 전송에 쓰이지 않지만, 나중에 대화방을 바꿀 때 다시 필요하다.
+    alert_telegram_token: str | None = None
 
     # 앱 설정
     app_env: str = "development"
