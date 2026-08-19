@@ -22,6 +22,7 @@ from app.routers import (
     kr_analysis,
     macro,
     meta,
+    notes,
     prices,
     stocks,
     us_analysis,
@@ -70,9 +71,9 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=DEV_FRONTEND_ORIGINS,
-    # 읽기(GET)가 대부분이고, 분석 실행과 관심종목 담기가 POST,
-    # 관심종목 빼기가 DELETE 다. 그 외 메서드는 열지 않는다.
-    allow_methods=["GET", "POST", "DELETE"],
+    # 읽기(GET)가 대부분이고, 분석 실행·관심종목 담기·메모 쓰기가 POST,
+    # 메모 고치기가 PUT, 빼기·지우기가 DELETE 다. 그 외 메서드는 열지 않는다.
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["*"],
 )
 
@@ -112,6 +113,7 @@ app.include_router(us_analysis.router)
 app.include_router(us_stocks.router)
 app.include_router(macro.router)
 app.include_router(watchlist.router)
+app.include_router(notes.router)
 app.include_router(health_router.router)
 app.include_router(meta.router)
 

@@ -6,6 +6,7 @@ import { DisclosureList } from './DisclosureList'
 import { FinancialSummary } from './FinancialSummary'
 import { ReportAnalysis } from './ReportAnalysis'
 import { SupplyDemand } from './SupplyDemand'
+import { StockNotes } from './StockNotes'
 import { WatchStar } from './WatchStar'
 import {
   changeColor,
@@ -146,6 +147,9 @@ export function StockDetailPanel({ symbol, live, market }: Props) {
 
       {/* 수급은 시세 옆에 둔다 — 거래량·거래대금과 같은 시장 자료라서 재무보다 위가 자연스럽다. */}
       <SupplyDemand symbol={symbol} />
+
+      {/* 메모는 재무·분석보다 위에 둔다. 아래로 밀면 긴 분석을 지나쳐야 해서 안 쓰게 된다. */}
+      <StockNotes symbol={symbol} />
 
       <FinancialSummary symbol={symbol} />
 

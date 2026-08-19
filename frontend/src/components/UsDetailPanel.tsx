@@ -15,6 +15,7 @@ import type {
 import { FinancialBars } from './FinancialBars'
 import type { FinancialRow } from './FinancialBars'
 import { TenKAnalysis } from './TenKAnalysis'
+import { StockNotes } from './StockNotes'
 import { WatchStar } from './WatchStar'
 import {
   changeColor,
@@ -149,6 +150,9 @@ export function UsDetailPanel({ symbol, listItem, live, market }: Props) {
           <div className="mt-2 text-sm text-neutral-500">현재가를 받는 중…</div>
         )}
       </div>
+
+      {/* 국내 화면과 같은 자리 — 재무 위. 아래로 밀면 긴 분석을 지나쳐야 해서 안 쓰게 된다. */}
+      <StockNotes symbol={symbol} />
 
       {rows.length > 0 ? (
         <FinancialBars

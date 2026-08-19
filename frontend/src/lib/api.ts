@@ -425,6 +425,49 @@ export function runKrAnalysis(symbol: string, force = false) {
   return request<KrAnalysis>(`/api/stocks/${symbol}/analysis${query}`, { method: 'POST' })
 }
 
+// ── 종목 메모 ────────────────────────────────────
+//
+// 기획서가 "이 프로젝트의 차별점" 이라 부른 기능이다. 서버 DB 에 저장되므로 브라우저를
+// 지워도 남고, 매일 백업에도 함께 들어간다.
+//
+// 시각은 UTC 오프셋이 붙은 문자열로 온다. 그래야 화면이 지역 시각으로 바꿔 보여줄 수 있다.
+
+export type Note = {
+  id: number
+  symbol: string
+  market: string
+  body: string
+  tags: string[]
+  created_at: string
+  updated_at: string
+  /** 작성 뒤에 고친 적이 있는가 */
+  edited: boolean
+}
+
+export function fetchNotes(symbol: string, limit = 50) {
+  return get<Note[]>(`/api/notes?symbol=${encodeURIComponent(symbol)}&limit=${limit}`)
+}
+
+export function createNote(symbol: string, body: string, tags: string[] = []) {
+  return request<Note>('/api/notes', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ symbol, body, tags }),
+  })
+}
+
+export function updateNote(id: number, body: string, tags: string[] = []) {
+  return request<Note>(`/api/notes/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ body, tags }),
+  })
+}
+
+export function deleteNote(id: number) {
+  return request<{ removed: boolean }>(`/api/notes/${id}`, { method: 'DELETE' })
+}
+
 // ── 가동 상태 ───────────────────────────────────────────────────────
 //
 // 앱이 스스로 판단한 상태다. `/health` 는 살아 있는지만 답하고, 이쪽은 무엇이 어떻게

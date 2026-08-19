@@ -78,8 +78,10 @@ def test_unknown_api_path_is_404_not_the_spa(client):
 
 def test_single_us_ticker_price_is_allowed(client):
     """예전에 min_length=6 때문에 거절됐다. 화면에는 현재가 연결 끊김으로 보였다."""
-    assert client.get("/api/prices?symbols=KO").status_code == 200
-    assert client.get("/api/prices?symbols=AAPL").status_code == 200
+    for symbol in ("KO", "AAPL"):
+        response = client.get(f"/api/prices?symbols={symbol}")
+        # 실패하면 본문까지 남긴다. 상태 코드만 보면 무엇이 막았는지 알 수 없다.
+        assert response.status_code == 200, f"{symbol}: {response.status_code} {response.text[:200]}"
 
 
 def test_kr_symbol_price_still_works(client):
@@ -222,3 +224,51 @@ def test_health_detail_is_200_even_when_unhealthy(client):
 def test_plain_health_stays_simple(client):
     """배포 스크립트와 오라클 경보가 읽는 경로다. 모양이 바뀌면 안 된다."""
     assert client.get("/health").json() == {"status": "ok"}
+
+
+# ---------------------------------------------------------------- 메모 (쓰기 경로)
+
+
+def test_note_crud_round_trip(client):
+    """메모는 지워지면 복구할 수 없는 유일한 데이터다. 네 동작을 한 번에 확인한다."""
+    created = client.post(
+        "/api/notes", json={"symbol": "005930", "body": "첫 메모", "tags": ["반도체"]}
+    )
+    assert created.status_code == 201
+    note_id = created.json()["id"]
+    assert created.json()["tags"] == ["반도체"]
+    assert created.json()["edited"] is False
+
+    listed = client.get("/api/notes?symbol=005930").json()
+    assert note_id in [n["id"] for n in listed]
+
+    edited = client.put(f"/api/notes/{note_id}", json={"body": "고친 메모", "tags": []})
+    assert edited.status_code == 200
+    assert edited.json()["edited"] is True
+    # 고쳤다고 작성 시각이 덮이면 안 된다 — 언제 그 판단을 했는지가 메모의 값어치다.
+    assert edited.json()["created_at"] == created.json()["created_at"]
+
+    assert client.delete(f"/api/notes/{note_id}").json() == {"removed": True}
+    assert client.delete(f"/api/notes/{note_id}").json() == {"removed": False}
+
+
+def test_empty_note_is_rejected(client):
+    response = client.post("/api/notes", json={"symbol": "005930", "body": "   "})
+    assert response.status_code in (400, 422)
+
+
+def test_note_symbol_is_required(client):
+    assert client.post("/api/notes", json={"body": "종목 없이"}).status_code == 422
+
+
+def test_notes_of_other_symbols_do_not_leak(client):
+    """다른 종목 메모가 섞이면 기록으로서 쓸모가 없어진다."""
+    a = client.post("/api/notes", json={"symbol": "000660", "body": "하이닉스 메모"}).json()
+    b = client.post("/api/notes", json={"symbol": "AAPL", "body": "애플 메모"}).json()
+
+    only = [n["id"] for n in client.get("/api/notes?symbol=000660").json()]
+    assert a["id"] in only
+    assert b["id"] not in only
+
+    client.delete(f"/api/notes/{a['id']}")
+    client.delete(f"/api/notes/{b['id']}")
