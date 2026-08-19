@@ -51,6 +51,43 @@ MAX_RETRY_ON_429 = 3
 TOKEN_EXPIRY_MARGIN_SEC = 60
 
 
+# ---------------------------------------------------------------- 프로세스 공유 상태
+#
+# 토큰과 rate limit 버킷은 **인스턴스가 아니라 프로세스 하나가 공유한다.**
+#
+# 이 프로젝트는 요청마다 `async with TossClient() as toss:` 로 새 인스턴스를 만든다
+# (수급·매크로·관심종목·미국 목록이 각각 그렇게 쓴다). 이것들을 인스턴스에 두면 두 가지가
+# 깨진다:
+#
+#   1. **토큰이 서로를 무효화한다.** 토스는 client_id 당 토큰 하나만 유효하다. 인스턴스마다
+#      새로 발급받으면 나중 발급이 앞선 것을 죽여서, 5초마다 도는 폴러가 401 을 맞고 다시
+#      발급받고, 그게 또 다른 쪽을 죽이는 일이 반복된다.
+#   2. **rate limit 이 지켜지지 않는다.** 버킷이 인스턴스마다 따로면 동시에 뜬 인스턴스
+#      수만큼 실제 호출 속도가 배로 뛴다. 실제로 화면을 처음 열 때 매크로·수급·현재가가
+#      한꺼번에 나가면서 429 를 맞았다.
+#
+# httpx 클라이언트는 인스턴스마다 둔다. 공유하면 한쪽의 `aclose()` 가 다른 쪽 요청을
+# 끊어 버린다. (연결 재사용까지 노리려면 클라이언트 수명 관리를 따로 설계해야 한다.)
+
+_BUCKETS: dict[str, TokenBucket] = {group: TokenBucket(rate) for group, rate in RATE_LIMITS.items()}
+
+
+class _TokenCache:
+    """프로세스가 하나만 갖는 토큰. 락도 함께 둔다."""
+
+    def __init__(self) -> None:
+        self.value: str | None = None
+        self.expires_at: float = 0.0
+        self.lock = asyncio.Lock()
+
+    def clear(self) -> None:
+        self.value = None
+        self.expires_at = 0.0
+
+
+_TOKEN = _TokenCache()
+
+
 class TossError(Exception):
     """토스증권 API 호출 실패. 사람이 읽고 다음 행동을 알 수 있는 메시지를 담는다."""
 
@@ -76,8 +113,8 @@ class BasePrice:
 class TossClient:
     """토스증권 Open API 클라이언트.
 
-    `async with TossClient() as toss:` 형태로 쓴다. 하나를 만들어 재사용해야
-    토큰 캐시와 rate limit 이 의미가 있다.
+    `async with TossClient() as toss:` 형태로 쓴다. 요청마다 새로 만들어도 된다 —
+    토큰과 rate limit 버킷은 프로세스 하나가 공유하기 때문이다(위 주석 참고).
     """
 
     def __init__(self, timeout: float = 10.0):
@@ -87,11 +124,7 @@ class TossClient:
         self._client_secret = settings.require("toss_client_secret")
 
         self._http = httpx.AsyncClient(base_url=BASE_URL, timeout=timeout)
-        self._buckets = {group: TokenBucket(rate) for group, rate in RATE_LIMITS.items()}
-
-        self._access_token: str | None = None
-        self._token_expires_at: float = 0.0
-        self._token_lock = asyncio.Lock()
+        # 토큰과 버킷은 모듈 수준에서 공유한다. 위 "프로세스 공유 상태" 주석 참고.
 
     async def __aenter__(self) -> "TossClient":
         return self
@@ -111,11 +144,11 @@ class TossClient:
         모두 재발급을 시도하는데, 토큰은 1개만 유효하므로 나중 발급이 앞선 발급을
         무효화해 버린다.
         """
-        async with self._token_lock:
-            if not force_refresh and self._access_token and time.monotonic() < self._token_expires_at:
-                return self._access_token
+        async with _TOKEN.lock:
+            if not force_refresh and _TOKEN.value and time.monotonic() < _TOKEN.expires_at:
+                return _TOKEN.value
 
-            await self._buckets["AUTH"].acquire()
+            await _BUCKETS["AUTH"].acquire()
             response = await self._http.post(
                 "/oauth2/token",
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
@@ -130,15 +163,15 @@ class TossClient:
                 raise self._to_error(response, context="토큰 발급")
 
             payload = response.json()
-            self._access_token = payload["access_token"]
-            self._token_expires_at = (
+            _TOKEN.value = payload["access_token"]
+            _TOKEN.expires_at = (
                 time.monotonic() + float(payload["expires_in"]) - TOKEN_EXPIRY_MARGIN_SEC
             )
-            return self._access_token
+            return _TOKEN.value
 
-    def _invalidate_token(self) -> None:
-        self._access_token = None
-        self._token_expires_at = 0.0
+    @staticmethod
+    def _invalidate_token() -> None:
+        _TOKEN.clear()
 
     # ------------------------------------------------------------------ 공통 호출
 
@@ -154,7 +187,7 @@ class TossClient:
         retried_after_401 = False
 
         for attempt in range(MAX_RETRY_ON_429 + 1):
-            await self._buckets[group].acquire()
+            await _BUCKETS[group].acquire()
             response = await self._http.get(
                 path,
                 params=params,
