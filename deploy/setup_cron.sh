@@ -6,13 +6,15 @@
 # 두 가지를 건다. 둘 다 `stock` 계정의 crontab 에 들어간다 — 파일을 만드는 작업이라
 # 소유자가 stock 이어야 다음 배포가 깨지지 않는다.
 #
-#   1. DB 백업        매일 21:20 UTC = 06:20 KST
-#   2. 가동 감시       10분마다
+#   1. DB 백업        매일 21:20 UTC = 06:20 KST   → data/backup.log
+#   2. 가동 감시       10분마다                    → data/watchdog.log
 #
 # **서버 시간은 UTC 다.** 03:40 으로 적으면 한국 시간 12:40 — 장중이다. 실제로 한 번
 # 그렇게 걸었다가 옮겼다. 시각을 고칠 때는 반드시 UTC 로 환산해서 적는다.
 #
-# 여러 번 돌려도 안전하다. 같은 표시가 붙은 줄을 지우고 다시 넣는다.
+# 여러 번 돌려도 안전하다. 우리 스크립트를 부르는 줄을 전부 걷어내고 다시 넣는다.
+# 표시(#stock-dashboard)만 보고 지우면, 손으로 넣어 둔 예전 줄이 남아 백업이 두 번 돈다.
+# 실제로 그렇게 겹친 적이 있다.
 
 set -euo pipefail
 
@@ -25,13 +27,14 @@ else
 	run_as_stock() { sudo -u stock -H bash -c "$1"; }
 fi
 
-# 기존 crontab 에서 이 스크립트가 넣은 줄만 걷어낸다. 사람이 손으로 넣은 줄은 남긴다.
-current="$(run_as_stock 'crontab -l 2>/dev/null' | grep -v "$MARK" || true)"
+# 우리 스크립트를 부르는 줄과 표시가 붙은 줄을 걸러낸다.
+ours="backend/scripts/backup_db.py|backend/scripts/watchdog.py|stock-dashboard"
+current="$(run_as_stock 'crontab -l 2>/dev/null' | grep -Ev "$ours" || true)"
 
 read -r -d '' lines <<CRON || true
 $current
-20 21 * * * cd $ROOT && ./.venv/bin/python backend/scripts/backup_db.py >> /tmp/backup.log 2>&1 $MARK
-*/10 * * * * cd $ROOT && ./.venv/bin/python backend/scripts/watchdog.py >> /tmp/watchdog.log 2>&1 $MARK
+20 21 * * * cd $ROOT && ./.venv/bin/python backend/scripts/backup_db.py >> $ROOT/data/backup.log 2>&1 $MARK
+*/10 * * * * cd $ROOT && ./.venv/bin/python backend/scripts/watchdog.py >> $ROOT/data/watchdog.log 2>&1 $MARK
 CRON
 
 # 빈 줄을 걷어내고 넣는다. 앞에 빈 줄이 있으면 crontab 이 통째로 거부하는 경우가 있다.
