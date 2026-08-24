@@ -13,6 +13,7 @@ import type {
   UsListItem,
 } from '../lib/api'
 import { FinancialBars } from './FinancialBars'
+import { UsValuationBox } from './UsValuationBox'
 import type { FinancialRow } from './FinancialBars'
 import { TenKAnalysis } from './TenKAnalysis'
 import { StockNotes } from './StockNotes'
@@ -153,6 +154,10 @@ export function UsDetailPanel({ symbol, listItem, live, market }: Props) {
 
       {/* 국내 화면과 같은 자리 — 재무 위. 아래로 밀면 긴 분석을 지나쳐야 해서 안 쓰게 된다. */}
       <StockNotes symbol={symbol} />
+
+      {/* 지표를 재무표 위에 둔다. 국내 화면과 같은 순서다 — PER·PBR 을 먼저 보고
+          그 근거인 추이로 내려간다. */}
+      <UsValuationBox ticker={symbol} />
 
       {rows.length > 0 ? (
         <FinancialBars

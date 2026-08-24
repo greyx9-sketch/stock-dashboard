@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import BigInteger, DateTime, Index, Integer, String
+from sqlalchemy import BigInteger, DateTime, Index, Integer, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -26,6 +26,12 @@ class SecCompany(Base):
     ticker: Mapped[str] = mapped_column(String(12), primary_key=True)
     cik: Mapped[str] = mapped_column(String(10))  # 10자리 zero-padding
     name: Mapped[str] = mapped_column(String(200))
+
+    # 발행주식수(`dei:EntityCommonStockSharesOutstanding`). **회계연도별 값이 아니라
+    # 가장 최근 제출 서류 표지에 적힌 현재 수량**이라 회사 쪽에 둔다.
+    # 언제 기준인지 함께 담는다 — 시가총액을 이 값으로 내므로 시점이 중요하다.
+    shares_outstanding: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    shares_as_of: Mapped[str | None] = mapped_column(String(10), nullable=True)
 
     fetched_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
@@ -56,6 +62,10 @@ class SecFinancial(Base):
     total_assets: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     total_liabilities: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     total_equity: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+
+    # 주당 현금배당금(달러). 그 회계연도에 선언된 값이다.
+    # **분기치를 잘못 집지 않도록** 기간이 1년인 것만 쓴다(`services/sec_financials.py`).
+    dps: Mapped[float | None] = mapped_column(Numeric(12, 4), nullable=True)
 
     currency: Mapped[str] = mapped_column(String(5), default="USD")
     # 이 값이 나온 보고서. 같은 연도가 여러 보고서에 나오므로 어느 것을 썼는지 남긴다.

@@ -5,6 +5,7 @@ import { PriceChart } from './PriceChart'
 import { DisclosureList } from './DisclosureList'
 import { FinancialSummary } from './FinancialSummary'
 import { ValuationBox } from './ValuationBox'
+import { PeerComparison } from './PeerComparison'
 import { ReportAnalysis } from './ReportAnalysis'
 import { SupplyDemand } from './SupplyDemand'
 import { StockNotes } from './StockNotes'
@@ -155,6 +156,10 @@ export function StockDetailPanel({ symbol, live, market }: Props) {
       {/* 지표를 재무표 위에 둔다. PER·PBR 을 먼저 보고 그 근거인 추이로 내려가는
           순서가 자연스럽다. */}
       <ValuationBox symbol={symbol} />
+
+      {/* 지표 바로 아래. "이 회사 PER 이 32배"를 보고 나서 "업종은 어떤가"로
+          이어지는 순서다. 업종을 모르는 종목에서는 아무것도 그리지 않는다. */}
+      <PeerComparison symbol={symbol} />
 
       <FinancialSummary symbol={symbol} />
 

@@ -30,6 +30,13 @@ class DartCorp(Base):
     corp_name: Mapped[str] = mapped_column(String(120))
     modify_date: Mapped[str] = mapped_column(String(8))  # DART 가 알려주는 최종 변경일
 
+    # 표준산업분류 코드(DART 기업개황의 `induty_code`). 동종업계 비교의 묶는 기준이다.
+    #
+    # **이름 대신 코드로 묶는다.** 코드→업종명 대응표를 우리가 갖고 있지 않아서인데,
+    # 비교 자체에는 이름이 필요 없다 — 같은 코드끼리 모아 놓고 회사 이름을 보여주면
+    # 사람이 읽을 수 있다. 지어낸 업종명을 붙이느니 코드를 그대로 밝힌다.
+    induty_code: Mapped[str | None] = mapped_column(String(10), nullable=True)
+
     fetched_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )

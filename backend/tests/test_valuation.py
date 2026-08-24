@@ -330,3 +330,98 @@ def test_roe_falls_back_when_owners_share_is_absent():
         receipt_no="x",
     )
     assert _to_year(row, None).roe == Decimal("50.00")
+
+
+# ================================================================== 미국
+#
+# 계산은 국내와 같다. 자료의 성질이 달라서 생기는 함정만 못 박는다.
+
+
+def _sec_fact(*, start: str, end: str, val, form: str = "10-K", filed: str = "2026-01-01") -> dict:
+    return {"start": start, "end": end, "val": val, "form": form, "filed": filed, "fp": "FY"}
+
+
+def test_us_dividend_ignores_quarterly_facts():
+    """**회귀 방지.** 회사에 따라 분기 배당을 연간과 **같은 계정**으로 태깅한다.
+
+    MSFT 가 그렇다 — 거르지 않으면 연간 3.64 달러가 분기 0.91 달러로 나온다.
+    """
+    from app.services.sec_financials import _collect_per_share
+
+    us_gaap = {
+        "CommonStockDividendsPerShareDeclared": {
+            "units": {
+                "USD/shares": [
+                    _sec_fact(start="2025-01-01", end="2025-12-31", val=3.64),
+                    _sec_fact(start="2025-10-01", end="2025-12-31", val=0.91),
+                ]
+            }
+        }
+    }
+    got = _collect_per_share(us_gaap)
+    assert got[2025]["val"] == 3.64
+
+
+def test_us_dividend_prefers_declared_over_paid():
+    """실제 지급은 분기 시차 때문에 그 해 선언액과 어긋난다. 선언 기준이 맞다."""
+    from app.services.sec_financials import _collect_per_share
+
+    us_gaap = {
+        "CommonStockDividendsPerShareDeclared": {
+            "units": {"USD/shares": [_sec_fact(start="2025-01-01", end="2025-12-31", val=5.80)]}
+        },
+        "CommonStockDividendsPerShareCashPaid": {
+            "units": {"USD/shares": [_sec_fact(start="2025-01-01", end="2025-12-31", val=5.20)]}
+        },
+    }
+    assert _collect_per_share(us_gaap)[2025]["val"] == 5.80
+
+
+def test_us_shares_come_from_the_dei_namespace():
+    """발행주식수는 us-gaap 이 아니라 dei(문서 정보)에 있다. **가장 최근 것**을 쓴다."""
+    from app.services.sec_financials import extract_shares
+
+    facts = {
+        "facts": {
+            "dei": {
+                "EntityCommonStockSharesOutstanding": {
+                    "units": {
+                        "shares": [
+                            {"end": "2025-07-01", "val": 100, "filed": "2025-08-01"},
+                            {"end": "2026-07-17", "val": 14_594_180_000, "filed": "2026-08-01"},
+                        ]
+                    }
+                }
+            }
+        }
+    }
+    assert extract_shares(facts) == (14_594_180_000, "2026-07-17")
+
+
+def test_us_shares_missing_is_not_an_error():
+    """ETF·DR 처럼 그 항목이 없는 종목이 있다. 터지지 않고 없다고만 답한다."""
+    from app.services.sec_financials import extract_shares
+
+    assert extract_shares({}) is None
+    assert extract_shares({"facts": {"dei": {}}}) is None
+
+
+def test_us_refetches_when_shares_are_missing():
+    """**회귀 방지(2026-08-25).** 주식수는 나중에 추가한 항목이다.
+
+    그 전에 저장된 회사는 재무만 있고 주식수가 비어 있는데, 연도 수만 보고 건너뛰면
+    영영 채워지지 않는다 — 국내에서 지배주주 몫을 추가했을 때와 똑같은 함정이다.
+    """
+    from app.models.us_company import SecCompany
+    from app.services.sec_financials import _has_shares
+
+    with get_session() as session:
+        session.add(SecCompany(ticker="AAPL", cik="0000320193", name="Apple Inc."))
+        session.commit()
+    assert _has_shares("0000320193") is False
+
+    with get_session() as session:
+        company = session.get(SecCompany, "AAPL")
+        company.shares_outstanding = 14_594_180_000
+        session.commit()
+    assert _has_shares("0000320193") is True

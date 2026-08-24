@@ -26,6 +26,7 @@ from app.routers import (
     meta,
     notes,
     prices,
+    screener,
     stocks,
     us_analysis,
     us_stocks,
@@ -85,6 +86,7 @@ app.add_middleware(
 # 국내 분석 라우터를 stocks 보다 먼저 등록한다. stocks 의 `/{symbol}` 포괄 경로가
 # 먼저 잡으면 `/analysis` 가 종목 코드로 오인된다(미국 쪽과 같은 이유).
 app.include_router(events.router)
+app.include_router(screener.router)
 app.include_router(kr_analysis.router)
 app.include_router(flows.router)
 app.include_router(stocks.router)

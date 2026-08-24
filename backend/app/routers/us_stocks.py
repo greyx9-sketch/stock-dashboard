@@ -18,6 +18,8 @@ from app.clients.sec import SecClient, SecError, UsFiling
 from app.clients.toss import TossClient, TossError
 from app.models.us_company import SecFinancial
 from app.services import sec_companies, sec_financials
+from app.services import valuation as valuation_service
+from app.services.price_poller import poller
 
 router = APIRouter(prefix="/api/us", tags=["미국 주식"])
 
@@ -348,3 +350,72 @@ async def get_us_financials(
         currency=rows[-1].currency,
         years=out,
     )
+
+
+# ====================================================================== 밸류에이션
+
+
+class UsValuationOut(BaseModel):
+    """미국 종목의 PER · PBR · 배당수익률.
+
+    국내와 계산은 같다. 다른 것은 **주식수의 기준일이 재무보다 앞선다**는 점이다 —
+    SEC 가 주는 발행주식수는 가장 최근 제출 서류 표지의 수량이라, 2025 회계연도 재무에
+    2026년 주식수가 붙는다. 시가총액은 그것이 맞지만 화면에 기준일을 밝힌다.
+    """
+
+    ticker: str
+    name: str
+
+    price: Decimal = Field(description="토스 현재가 (USD)")
+    shares_outstanding: int
+    shares_as_of: str | None = Field(description="주식수 기준일. 재무 기간과 다르다")
+    market_cap: Decimal
+
+    fiscal_year: int | None
+    period_end: str | None = Field(description="그 회계연도 종료일")
+
+    eps: Decimal | None
+    bps: Decimal | None
+    dps: Decimal | None = Field(description="주당 현금배당금 (USD). 그 해 선언 기준")
+
+    per: Decimal | None
+    pbr: Decimal | None
+    dividend_yield: Decimal | None
+
+    per_note: str | None
+    pbr_note: str | None
+    dividend_note: str | None
+
+
+@router.get("/{ticker}/valuation", summary="미국 밸류에이션 (PER·PBR·배당수익률)")
+async def get_us_valuation(
+    ticker: str = Path(description="티커 (예: AAPL)"),
+) -> UsValuationOut:
+    """**현재가를 받지 못하면 계산하지 않는다.**
+
+    국내에는 KRX 확정 종가라는 물러설 자리가 있지만 미국은 토스 현재가뿐이다. 옛 값으로
+    PER 을 내면 그것이 언제 기준인지 밝힐 방법이 없다.
+    """
+    symbol = ticker.strip().upper()
+    company = sec_companies.get_company(symbol)
+    if company is None:
+        raise HTTPException(status_code=404, detail=f"'{symbol}' 을 SEC 목록에서 찾지 못했습니다.")
+
+    try:
+        await sec_financials.ensure_financials(company.cik, years=2)
+    except Exception as exc:  # SEC 가 느리거나 막혀도 화면 전체를 죽이지 않는다
+        raise HTTPException(status_code=502, detail=f"SEC 조회에 실패했습니다 — {exc}") from exc
+
+    # 현재가는 폴러가 들고 있다. 아직 못 받았으면 등록해 두고 다음 요청에 답한다.
+    poller.register([symbol])
+
+    result = valuation_service.compute_us(symbol)
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"'{symbol}' 의 밸류에이션을 낼 수 없습니다.\n"
+                "현재가나 발행주식수를 아직 받지 못했습니다. 잠시 뒤 다시 열어 보세요."
+            ),
+        )
+    return UsValuationOut(**vars(result))

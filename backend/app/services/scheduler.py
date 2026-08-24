@@ -36,6 +36,12 @@ KST = timezone(timedelta(hours=9))
 
 JOB_ID = "krx-daily-close"
 
+# 유니버스 적재 시각(KST). **확정 종가 수집(13:20) 이 끝난 뒤**여야 시가총액 상위가
+# 최신 자료로 뽑힌다. 40분이면 그 수집이 끝나고도 남는다.
+UNIVERSE_JOB_ID = "screener-universe"
+UNIVERSE_HOUR = 14
+UNIVERSE_MINUTE = 0
+
 # 확정 종가는 오후 1시 이후 공개된다. 정각에 붙으면 아직 안 올라와 있을 수 있어 여유를 둔다.
 RUN_HOUR = 13
 RUN_MINUTE = 20
@@ -107,8 +113,36 @@ class KrxScheduler:
             replace_existing=True,
         )
 
+        # 스크리너·동종업계 비교가 볼 유니버스를 채운다. **확정 종가 수집보다 뒤에** 둔다 —
+        # 시가총액 상위를 그 자료에서 고르기 때문이다.
+        #
+        # 조건에 맞는 종목을 찾으려면 후보 전부의 지표를 미리 알아야 해서, 조회 시점이
+        # 아니라 여기서 받아 둔다(`services/universe.py` 참고). 300종목에 5분쯤 걸리고
+        # 이미 받아 둔 것은 건너뛰므로 평소에는 훨씬 빠르다.
+        self._scheduler.add_job(
+            self._load_universe,
+            CronTrigger(day_of_week="mon-fri", hour=UNIVERSE_HOUR, minute=UNIVERSE_MINUTE,
+                        timezone=KST),
+            id=UNIVERSE_JOB_ID,
+            name="스크리너 유니버스 적재",
+            misfire_grace_time=3600,
+            coalesce=True,
+            max_instances=1,
+            replace_existing=True,
+        )
+
         self._scheduler.start()
         logger.info("스케줄러 시작. 다음 정기 수집: %s", self.next_run_at)
+
+    async def _load_universe(self) -> None:
+        """유니버스 적재. **실패해도 서버를 흔들지 않는다** — 스크리너가 어제 자료로
+        도는 것은 사이트가 멈추는 것과 다르다."""
+        from app.services import universe
+
+        try:
+            await universe.load()
+        except Exception:
+            logger.exception("유니버스 적재 실패 — 다음 주기에 다시 시도한다")
 
     def shutdown(self) -> None:
         if self._scheduler.running:

@@ -32,12 +32,12 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from app.clients.sec import SecClient, pad_cik
 from app.models.base import get_session
-from app.models.us_company import SecFinancial
+from app.models.us_company import SecCompany, SecFinancial
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +75,20 @@ INSTANT_CONCEPTS: dict[str, tuple[str, ...]] = {
 }
 
 METRICS = tuple(DURATION_CONCEPTS) + tuple(INSTANT_CONCEPTS)
+
+# 주당 현금배당금. 단위가 `USD` 가 아니라 `USD/shares` 라 위 두 묶음과 따로 다룬다.
+#
+# **선언 기준(Declared)을 먼저 본다.** 실제 지급(CashPaid)은 분기 시차 때문에 그 해에
+# 선언한 금액과 어긋난다. 배당수익률은 "이 회사가 한 해에 얼마를 주기로 했나"를 보는
+# 값이라 선언 기준이 맞다.
+DPS_CONCEPTS = ("CommonStockDividendsPerShareDeclared", "CommonStockDividendsPerShareCashPaid")
+DPS_UNIT = "USD/shares"
+
+# 발행주식수는 us-gaap 이 아니라 **dei**(문서 정보) 네임스페이스에 있다. 회계연도별
+# 값이 아니라 **가장 최근 제출 서류 표지에 적힌 현재 수량**이다.
+SHARES_NAMESPACE = "dei"
+SHARES_CONCEPT = "EntityCommonStockSharesOutstanding"
+SHARES_UNIT = "shares"
 
 
 @dataclass
@@ -161,6 +175,56 @@ def _collect(
     return by_year
 
 
+def _collect_per_share(us_gaap: dict[str, Any]) -> dict[int, dict[str, Any]]:
+    """주당배당금을 회계연도별로. 단위가 `USD/shares` 인 것만 빼면 `_collect` 와 같다.
+
+    **기간이 1년인 사실만 쓴다**(`_annual_duration`). 회사에 따라 분기 배당을 같은
+    계정으로 태깅해서, 거르지 않으면 연간 배당이 분기치로 나온다 — MSFT 가 그렇다.
+    """
+    by_year: dict[int, dict[str, Any]] = {}
+    for concept in DPS_CONCEPTS:
+        entry = us_gaap.get(concept)
+        if not entry:
+            continue
+        grouped: dict[int, list[dict[str, Any]]] = {}
+        for fact in (entry.get("units") or {}).get(DPS_UNIT) or []:
+            if not _is_annual_report(fact.get("form") or ""):
+                continue
+            if not _annual_duration(fact):
+                continue
+            year = fiscal_year_of(fact.get("end") or "")
+            if year is None:
+                continue
+            grouped.setdefault(year, []).append(fact)
+        for year, candidates in grouped.items():
+            if year in by_year:
+                continue
+            picked = _pick_latest(candidates)
+            if picked is not None:
+                by_year[year] = picked
+    return by_year
+
+
+def extract_shares(facts: dict[str, Any]) -> tuple[int, str] | None:
+    """발행주식수와 그 기준일. 없으면 None.
+
+    **회계연도별 값이 아니다.** 가장 최근 제출 서류 표지에 적힌 수량이라, 재무보다
+    시점이 앞선다(예: 2025 회계연도 재무 + 2026-07 기준 주식수). 시가총액을 이 값으로
+    내므로 기준일을 반드시 함께 들고 다닌다.
+    """
+    entry = ((facts.get("facts") or {}).get(SHARES_NAMESPACE) or {}).get(SHARES_CONCEPT)
+    if not entry:
+        return None
+    rows = (entry.get("units") or {}).get(SHARES_UNIT) or []
+    if not rows:
+        return None
+    newest = max(rows, key=lambda f: (f.get("end") or "", f.get("filed") or ""))
+    try:
+        return int(newest["val"]), str(newest.get("end") or "")
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
 def extract_annual(facts: dict[str, Any]) -> list[YearFacts]:
     """companyfacts 응답에서 연도별 재무 요약을 만든다. 오래된 연도부터 돌려준다."""
     us_gaap = (facts.get("facts") or {}).get("us-gaap") or {}
@@ -172,6 +236,7 @@ def extract_annual(facts: dict[str, Any]) -> list[YearFacts]:
         per_metric[metric] = _collect(us_gaap, concepts, duration=True)
     for metric, concepts in INSTANT_CONCEPTS.items():
         per_metric[metric] = _collect(us_gaap, concepts, duration=False)
+    per_metric["dps"] = _collect_per_share(us_gaap)
 
     years = sorted({year for mapping in per_metric.values() for year in mapping})
 
@@ -180,6 +245,8 @@ def extract_annual(facts: dict[str, Any]) -> list[YearFacts]:
         values = {
             metric: (per_metric[metric].get(year) or {}).get("val") for metric in METRICS
         }
+        # 배당은 금액이 아니라 주당 단가라 정수로 만들지 않는다.
+        values["dps"] = (per_metric["dps"].get(year) or {}).get("val")
         if all(v is None for v in values.values()):
             continue
 
@@ -265,11 +332,24 @@ async def ensure_financials(cik: str, *, years: int = 6) -> int:
     이미 충분히 저장돼 있으면 부르지 않는다.
     """
     cik = pad_cik(cik)
-    if stored_count(cik) >= years:
+    # **주식수가 비어 있으면 저장된 연도가 충분해도 다시 받는다.**
+    #
+    # 발행주식수와 주당배당금은 나중에 추가한 항목이라(2026-08-25), 그 전에 저장된
+    # 회사는 재무만 있고 이 둘이 비어 있다. 연도 수만 보고 건너뛰면 영영 채워지지
+    # 않는다 — 국내에서 지배주주 몫을 추가했을 때와 똑같은 함정이다.
+    #
+    # 한 번 받아 채우면 아래 조건이 거짓이 되어 다시 받지 않는다.
+    if stored_count(cik) >= years and _has_shares(cik):
         return 0
 
     async with SecClient() as sec:
         facts = await sec.get_company_facts(cik)
+
+    # 발행주식수는 같은 응답 안에 있다. 밸류에이션이 시가총액을 이 값으로 내므로
+    # 재무와 함께 챙겨 둔다 — 따로 부르면 3~4MB 를 한 번 더 받게 된다.
+    shares = extract_shares(facts)
+    if shares is not None:
+        await asyncio.to_thread(_save_shares, cik, *shares)
 
     extracted = extract_annual(facts)
     if not extracted:
@@ -278,3 +358,27 @@ async def ensure_financials(cik: str, *, years: int = 6) -> int:
 
     # 파싱과 저장은 동기 작업이다. 이벤트 루프를 붙잡지 않게 스레드로 뺀다.
     return await asyncio.to_thread(_save, cik, extracted)
+
+
+def _has_shares(cik: str) -> bool:
+    """발행주식수를 이미 받아 두었는가. 위 조기 반환 판단에 쓴다."""
+    with get_session() as session:
+        return bool(
+            session.execute(
+                select(SecCompany.shares_outstanding).where(SecCompany.cik == cik)
+            ).scalar()
+        )
+
+
+def _save_shares(cik: str, count: int, as_of: str) -> None:
+    """발행주식수를 회사 행에 적어 둔다. **더 최근 기준일일 때만** 덮어쓴다."""
+    with get_session() as session:
+        session.execute(
+            update(SecCompany)
+            .where(SecCompany.cik == cik)
+            .where(
+                (SecCompany.shares_as_of.is_(None)) | (SecCompany.shares_as_of < as_of)
+            )
+            .values(shares_outstanding=count, shares_as_of=as_of)
+        )
+        session.commit()

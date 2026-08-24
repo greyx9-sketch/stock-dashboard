@@ -3,6 +3,7 @@ import { KrMarket } from './pages/KrMarket'
 import { UsMarket } from './pages/UsMarket'
 import { Watchlist } from './pages/Watchlist'
 import { Calendar } from './pages/Calendar'
+import { Screener } from './pages/Screener'
 import { MacroStrip } from './components/MacroStrip'
 import { SystemBanner } from './components/SystemBanner'
 
@@ -14,12 +15,13 @@ import { SystemBanner } from './components/SystemBanner'
 
 // 관심종목은 두 시장을 섞어 담으므로 국내·미국과 나란히 놓인 세 번째 탭이다.
 // 일정은 시장을 가리지 않는 것(금통위·FOMC·만기)이 대부분이라 맨 뒤에 둔다.
-type Tab = 'KR' | 'US' | 'WATCH' | 'CAL'
+type Tab = 'KR' | 'US' | 'WATCH' | 'SCREEN' | 'CAL'
 
 const TABS: { key: Tab; label: string }[] = [
   { key: 'KR', label: '국내' },
   { key: 'US', label: '미국' },
   { key: 'WATCH', label: '관심' },
+  { key: 'SCREEN', label: '분석' },
   { key: 'CAL', label: '일정' },
 ]
 
@@ -58,6 +60,7 @@ export default function App() {
       {country === 'KR' && <KrMarket key="KR" />}
       {country === 'US' && <UsMarket key="US" />}
       {country === 'WATCH' && <Watchlist key="WATCH" />}
+      {country === 'SCREEN' && <Screener key="SCREEN" />}
       {country === 'CAL' && <Calendar key="CAL" />}
       </div>
     </>

@@ -737,3 +737,89 @@ export function createEvent(payload: {
 export function deleteEvent(id: number) {
   return request<{ removed: boolean }>(`/api/events/${id}`, { method: 'DELETE' })
 }
+
+// ── 기업 분석 (스크리너 · 동종업계 비교) ─────────────────────────
+//
+// 지표는 **미리 받아 둔 종목만** 안다. 그래서 응답에 `universe`(아는 종목 수)가 함께
+// 오고, 화면은 그것을 반드시 밝힌다 — "조건에 맞는 종목 3개"와 "아는 300종목 중 3개"는
+// 다른 말이다.
+
+export type ScreenRow = {
+  symbol: string
+  name: string
+  market: string
+  price: number
+  market_cap: number
+  fiscal_year: number | null
+  per: string | null
+  pbr: string | null
+  roe: string | null
+  dividend_yield: string | null
+  revenue_growth: string | null
+}
+
+export type ScreenResult = {
+  trade_date: string
+  universe: number
+  matched: number
+  rows: ScreenRow[]
+  industry_code?: string | null
+  /** 지주회사로 분류된 종목인가. 참이면 사업이 달라도 같은 업종으로 묶인다. */
+  holding_company?: boolean
+}
+
+export type ScreenFilters = {
+  per_max?: number | null
+  pbr_max?: number | null
+  roe_min?: number | null
+  yield_min?: number | null
+  growth_min?: number | null
+  market?: string | null
+  sort?: string
+  desc?: boolean
+  limit?: number
+}
+
+export function fetchScreen(filters: ScreenFilters) {
+  const params = new URLSearchParams()
+  for (const [key, value] of Object.entries(filters)) {
+    if (value === null || value === undefined || value === '') continue
+    params.set(key, String(value))
+  }
+  return get<ScreenResult>(`/api/screener?${params}`)
+}
+
+export function fetchPeers(symbol: string, limit = 10) {
+  return get<ScreenResult>(`/api/screener/peers/${symbol}?limit=${limit}`)
+}
+
+/**
+ * 미국 밸류에이션.
+ *
+ * 국내와 다른 점 하나: **발행주식수의 기준일이 재무 기간과 다르다.** SEC 가 주는
+ * 수량은 가장 최근 제출 서류 표지의 값이라, 2025 회계연도 재무에 2026년 주식수가
+ * 붙는다. 화면이 `shares_as_of` 를 반드시 밝힌다.
+ */
+export type UsValuation = {
+  ticker: string
+  name: string
+  price: string
+  shares_outstanding: number
+  shares_as_of: string | null
+  market_cap: string
+  fiscal_year: number | null
+  period_end: string | null
+  eps: string | null
+  bps: string | null
+  dps: string | null
+  per: string | null
+  pbr: string | null
+  dividend_yield: string | null
+  per_note: string | null
+  pbr_note: string | null
+  dividend_note: string | null
+}
+
+export function fetchUsValuation(ticker: string) {
+  return get<UsValuation>(`/api/us/${encodeURIComponent(ticker)}/valuation`)
+}
