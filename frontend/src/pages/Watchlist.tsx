@@ -72,13 +72,13 @@ export function Watchlist() {
           {krSymbols.length > 0 && (
             <span className="inline-flex items-center gap-1.5">
               <span className="text-xs text-neutral-500">국내</span>
-              <MarketBadge market={kr.market} error={kr.error} />
+              <MarketBadge market={kr.market} error={kr.error} realtime={kr.realtime} />
             </span>
           )}
           {usSymbols.length > 0 && (
             <span className="inline-flex items-center gap-1.5">
               <span className="text-xs text-neutral-500">미국</span>
-              <MarketBadge market={us.market} error={us.error} />
+              <MarketBadge market={us.market} error={us.error} realtime={us.realtime} />
             </span>
           )}
           {loading && <span className="text-xs text-neutral-500">불러오는 중…</span>}

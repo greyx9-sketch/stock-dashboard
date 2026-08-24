@@ -63,6 +63,12 @@ class PricesOut(BaseModel):
     missing: list[str] = Field(description="아직 받아 오지 못한 종목. 다음 요청에는 채워진다")
     error: str | None = Field(description="폴러가 마지막으로 만난 오류. 있으면 화면에 밝힌다")
     last_success_at: str | None = Field(description="마지막으로 현재가를 받아 온 시각")
+    realtime: bool = Field(
+        description=(
+            "이 종목들이 전부 웹소켓 체결 푸시로 들어오고 있는가. 거짓이면 폴링으로 "
+            "받는 중이다 — 값은 그대로 나오고 갱신이 덜 촘촘할 뿐이다."
+        )
+    )
 
 
 def _base_prices(symbols: list[str]) -> dict[str, KrxDailyQuote]:
@@ -161,4 +167,5 @@ def get_prices(
         missing=[s for s in wanted if s not in cached],
         error=poller.last_error,
         last_success_at=last_success.isoformat() if last_success else None,
+        realtime=poller.realtime_for(wanted),
     )

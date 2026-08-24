@@ -88,11 +88,13 @@ CLAUDE.md
 - 개요·rate limit·에러: https://openapi.tossinvest.com/openapi-docs/overview.md
 - OpenAPI JSON (스펙의 최종 근거): https://openapi.tossinvest.com/openapi-docs/latest/openapi.json
 - Base: `https://openapi.tossinvest.com`, 인증은 OAuth 2.0 Client Credentials
-- 지금은 서버 폴링으로 실시간을 구현하고 있다(정규장 1초 주기).
-- **웹소켓이 생겼다 (2026-08-24 원문 확인).** 예전에는 REST만 있어 폴링밖에 길이 없었으나,
-  지금은 `wss://openapi-ws.tossinvest.com/ws/v1` 로 체결·호가를 실시간으로 받을 수 있다.
-  계정당 동시 연결 2개, 연결당 구독 100건, 180초 안에 PING 필요(60초 권장).
-  폴링을 웹소켓으로 옮기는 것은 아직 하지 않았다 — 하려면 사용자와 상의한다.
+- 웹소켓 스펙의 최종 근거는 AsyncAPI JSON: https://openapi.tossinvest.com/openapi-docs/latest/asyncapi.json
+- **현재가는 웹소켓으로 받는다** (`clients/toss_ws.py`, 2026-08-24 도입).
+  `wss://openapi-ws.tossinvest.com/ws/v1` · 구독은 선언형 full-replace · 텍스트 `PING` 60초.
+  **REST 폴링을 걷어내지 않았다.** 구독 직후엔 값이 안 오고, 구독은 100종목까지이며,
+  푸시는 LOSSY 라 유실을 감지할 수 없다. 폴링이 첫 값·초과분·유실을 메우는 안전망으로 남는다.
+- **동시 연결은 계정당 2개다.** 배포 서버 하나 + 개발 PC 하나면 꽉 찬다. 셋째를 열면 가장
+  오래된 연결이 소리 없이 끊긴다. 로컬에서 시험할 때 배포 서버의 실시간이 끊길 수 있다.
 - 주의: 허용 IP에 등록되지 않은 IP에서의 호출은 403으로 차단된다. 개발은 사용자의 집에서 이루어지므로 집 IP가 등록되어 있어야 하고, 가정용 회선은 IP가 바뀔 수 있다. 원인 불명의 403이 발생하면 이것부터 확인하도록 안내한다.
 
 **OpenDART** (국내 공시·재무) — https://opendart.fss.or.kr/intro/main.do

@@ -169,7 +169,10 @@ def _check_poller(now: datetime) -> Check:
 
     if error:
         return Check("현재가", "degraded", f"최근 호출이 실패했습니다 — {error}"[:200])
-    return Check("현재가", "ok", f"{int(age)}초 전 갱신")
+
+    # **웹소켓이 끊긴 것 자체는 고장이 아니다.** 폴링이 그대로 값을 가져오므로 사이트는
+    # 멀쩡하다. 알리되 등급을 내리지 않는다 — 멀쩡한데 우는 경보를 만들지 않기 위해서다.
+    return Check("현재가", "ok", f"{int(age)}초 전 갱신 · {poller.realtime_detail}")
 
 
 def _check_collection(now: datetime) -> Check:

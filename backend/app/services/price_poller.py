@@ -1,7 +1,13 @@
 """현재가 폴러.
 
-토스증권 Open API 는 REST 만 제공하고 WebSocket 이 없다. 그래서 실시간처럼 보이게 하려면
-서버가 주기적으로 현재가를 받아 두고, 브라우저는 그 값을 읽어 가는 구조로 만들어야 한다.
+서버가 현재가를 받아 두고 브라우저는 그 값을 읽어 간다. 값을 받는 길이 **둘**이다:
+
+- **웹소켓**(`clients/toss_ws.py`) — 체결이 일어나는 그 순간 밀려 들어온다. 빠른 길.
+- **REST 폴링**(이 파일) — 주기적으로 되묻는다. 첫 값·한도 초과분·유실을 메우는 안전망.
+
+예전에는 토스에 웹소켓이 없어 폴링만이 길이었다. 2026-08-24 에 웹소켓이 생긴 것을
+확인하고 얹었다. **폴링을 걷어내지 않은 이유는 `clients/toss_ws.py` 첫머리에 적었다** —
+구독 직후엔 값이 안 오고, 구독은 100종목까지이며, 푸시는 유실될 수 있다.
 
 이 파일이 지키는 원칙 세 가지:
 
@@ -30,6 +36,7 @@ from decimal import Decimal
 from typing import Any, Literal
 
 from app.clients.toss import TossClient, TossError
+from app.clients.toss_ws import TossTradeFeed
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +66,13 @@ INTERVAL_BY_PHASE: dict[str, float] = {
     "HOLIDAY": 60.0,
     "UNKNOWN": 30.0,
 }
+
+# 웹소켓이 그 종목들을 전부 덮고 있을 때의 REST 주기(초).
+#
+# **웹소켓이 붙어 있어도 REST 를 끄지 않는다.** 시세 푸시는 LOSSY 이고 유실을 감지할
+# sequence 도 없어서, 연결이 살아 있는 채로 조용해져도 우리가 알 방법이 없다. 30초에
+# 한 번 REST 로 맞춰 보면 그런 경우에도 화면이 30초 넘게 멈추지 않는다.
+WS_SAFETY_INTERVAL_SEC = 30.0
 
 # 값이 움직이는 시간대. 이 동안에만 현재가를 다시 받는다.
 LIVE_PHASES = ("PRE", "REGULAR", "AFTER", "DAY")
@@ -246,6 +260,8 @@ class PricePoller:
         self._task: asyncio.Task[None] | None = None
         self._wakeup = asyncio.Event()
         self._loop: asyncio.AbstractEventLoop | None = None
+        # 체결 푸시를 받는 웹소켓. 값은 여기(_prices)에 그대로 들어온다.
+        self._feed = TossTradeFeed(self._on_trade)
 
     # ------------------------------------------------------------------ 외부에서 쓰는 것
 
@@ -298,6 +314,28 @@ class PricePoller:
     def watching(self) -> int:
         return len(self._wanted)
 
+    def realtime_for(self, symbols: list[str]) -> bool:
+        """**이 종목들이** 전부 웹소켓으로 들어오고 있는가.
+
+        서버 전체가 아니라 묻는 쪽이 보고 있는 것만 따진다. 화면 하나가 50종목을
+        보는데, 조금 전까지 다른 탭에서 보던 종목이 아직 목록에 남아 있다고(120초간
+        남는다) "실시간이 아니다"라고 답하면 틀린 말이다 — 지금 이 화면의 종목은
+        전부 실시간으로 들어오고 있기 때문이다.
+        """
+        return self._feed.covers(symbols)
+
+    @property
+    def realtime_detail(self) -> str:
+        """사람이 읽을 실시간 연결 상태. 화면과 점검 메시지에 그대로 쓴다."""
+        if not self._feed.connected:
+            reason = self._feed.last_error
+            return f"연결 끊김 — 폴링으로 받는 중{f' ({reason})' if reason else ''}"
+        watching = set(self._wanted)
+        covered = watching & self._feed.subscribed
+        if watching and covered != watching:
+            return f"일부만 실시간 ({len(covered)}/{len(watching)} 종목) — 나머지는 폴링"
+        return "실시간"
+
     # ------------------------------------------------------------------ 수명 관리
 
     async def start(self) -> None:
@@ -305,9 +343,12 @@ class PricePoller:
             # 루프를 기억해 둔다. 워커 스레드에서 폴러를 깨울 때 필요하다.
             self._loop = asyncio.get_running_loop()
             self._task = asyncio.create_task(self._run(), name="price-poller")
+        # 웹소켓은 붙지 않아도 사이트가 도는 곁다리다. 못 붙어도 폴링이 그대로 맡는다.
+        await self._feed.start()
 
     async def stop(self) -> None:
         self._loop = None
+        await self._feed.stop()
         if self._task is None:
             return
         self._task.cancel()
@@ -348,6 +389,14 @@ class PricePoller:
         by_market: dict[str, list[str]] = {"KR": [], "US": []}
         for symbol in self._wanted:
             by_market[classify_market(symbol)].append(symbol)
+
+        # 웹소켓에도 같은 목록을 넘긴다. **최근에 요청된 순서로** 넘겨야 한도(100건)에
+        # 걸려 잘릴 때 가장 오래 방치된 종목부터 빠진다.
+        recent = sorted(self._wanted, key=lambda s: self._wanted[s], reverse=True)
+        self._feed.set_symbols(
+            [s for s in recent if classify_market(s) == "KR"],
+            [s for s in recent if classify_market(s) == "US"],
+        )
 
         # 아무도 화면을 안 보고 있고 달력도 최신이면 부를 이유가 없다.
         if not self._wanted and not need_calendar:
@@ -399,13 +448,26 @@ class PricePoller:
 
         보고 있는 종목이 속한 시장 중 **가장 빠른 주기**를 따른다. 국내와 미국을 동시에
         보고 있는데 한쪽만 장중이면 그쪽 속도에 맞춰야 그 화면이 멈춰 보이지 않는다.
+
+        **웹소켓이 그 종목들을 전부 덮고 있으면 훨씬 느슨하게 본다.** 값은 이미 푸시로
+        들어오고 있으므로 REST 는 유실을 메우는 안전망 역할만 하면 된다. 하나라도
+        빠져 있으면(한도 초과·거부·연결 끊김) 원래 주기로 돌아간다 — 그 하나가 멈춰
+        보이면 안 되기 때문이다.
         """
         intervals = [
             INTERVAL_BY_PHASE[self._markets[country].phase]
             for country, symbols in by_market.items()
             if symbols
         ]
-        return min(intervals) if intervals else INTERVAL_BY_PHASE["CLOSED"]
+        if not intervals:
+            return INTERVAL_BY_PHASE["CLOSED"]
+
+        base = min(intervals)
+        live = [s for country, symbols in by_market.items() for s in symbols
+                if self._markets[country].phase in LIVE_PHASES]
+        if live and self._feed.covers(live):
+            return max(base, WS_SAFETY_INTERVAL_SEC)
+        return base
 
     async def _fetch_prices(self, toss: TossClient, symbols: list[str]) -> None:
         """관심 종목의 현재가를 받아 캐시를 갱신한다. 200 개씩 끊어 부른다."""
@@ -424,6 +486,26 @@ class PricePoller:
                     fetched_at=fetched_at,
                 )
         self._last_success_at = fetched_at
+
+    def _on_trade(self, symbol: str, price: Decimal, timestamp: str | None) -> None:
+        """웹소켓이 체결을 밀어줄 때마다 불린다. **이벤트 루프 안이라 가벼워야 한다.**
+
+        아무도 안 보는 종목이면 버린다. 구독 해제가 한 박자 늦게 반영되는 사이에도
+        프레임이 계속 오는데, 그걸 받아 두면 이미 지운 종목이 캐시에 되살아난다.
+        """
+        if symbol not in self._wanted:
+            return
+
+        now = datetime.now(timezone.utc)
+        self._prices[symbol] = CachedPrice(
+            symbol=symbol,
+            last_price=price,
+            timestamp=timestamp,
+            fetched_at=now,
+        )
+        # 가동 점검이 이 값으로 "현재가가 살아 있는가"를 판단한다. 웹소켓으로 받은 것도
+        # 갱신은 갱신이므로 함께 찍어 준다.
+        self._last_success_at = now
 
     def _drop_stale_interest(self) -> None:
         """한동안 아무도 찾지 않은 종목을 폴링 대상에서 뺀다."""

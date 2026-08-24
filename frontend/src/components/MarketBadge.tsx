@@ -16,9 +16,11 @@ const DOT_STYLE: Record<string, string> = {
 type Props = {
   market: MarketState | null
   error: string | null
+  /** 웹소켓으로 들어오는 중인가. 붙지 않았을 때도 폴링으로 값은 그대로 나온다. */
+  realtime?: boolean
 }
 
-export function MarketBadge({ market, error }: Props) {
+export function MarketBadge({ market, error, realtime = false }: Props) {
   if (error) {
     return (
       <span className="inline-flex items-center gap-1.5 rounded-full border border-red-900/60 bg-red-950/40 px-2.5 py-1 text-xs text-red-300">
@@ -47,7 +49,9 @@ export function MarketBadge({ market, error }: Props) {
       {market.label}
       <span className="text-neutral-500">
         {market.is_live
-          ? '· 5초마다 갱신'
+          ? realtime
+            ? '· 실시간'
+            : '· 1초마다 갱신'
           : market.next_open
             ? `· 다음 개장 ${formatTimestamp(market.next_open)}`
             : ''}

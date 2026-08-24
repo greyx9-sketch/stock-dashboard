@@ -89,7 +89,7 @@ export function UsMarket() {
     <div>
       <header className="mb-6">
         <div className="flex flex-wrap items-center gap-3">
-          <MarketBadge market={livePrices.market} error={livePrices.error} />
+          <MarketBadge market={livePrices.market} error={livePrices.error} realtime={livePrices.realtime} />
         </div>
         <p className="mt-1 text-sm text-neutral-400">
           {keyword.trim()

@@ -89,6 +89,8 @@ export type PricesResponse = {
   missing: string[]
   error: string | null
   last_success_at: string | null
+  /** 전부 웹소켓 체결 푸시로 들어오고 있는가. 거짓이면 폴링으로 받는 중이다. */
+  realtime: boolean
 }
 
 export type SortKey = 'market_cap' | 'trade_value' | 'volume' | 'change_rate' | 'close'

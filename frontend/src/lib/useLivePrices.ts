@@ -30,6 +30,8 @@ export type LivePrices = {
   error: string | null
   /** 이번 화면에서 아직 한 번도 받지 못했는가. 첫 렌더에서 "—" 를 보여줄지 판단한다. */
   loaded: boolean
+  /** 보고 있는 종목이 전부 웹소켓으로 들어오고 있는가. 배지 문구가 이걸로 갈린다. */
+  realtime: boolean
 }
 
 export function useLivePrices(symbols: string[], country: Country = 'KR'): LivePrices {
@@ -108,5 +110,6 @@ export function useLivePrices(symbols: string[], country: Country = 'KR'): LiveP
     market: data?.markets[country] ?? null,
     error,
     loaded: data !== null,
+    realtime: data?.realtime ?? false,
   }
 }

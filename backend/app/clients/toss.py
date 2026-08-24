@@ -502,3 +502,19 @@ class TossClient:
             trade_date=previous["timestamp"][:10],
             source="토스 일봉 종가(시간외 포함) — 앱 화면과 다를 수 있음",
         )
+
+
+# ---------------------------------------------------------------- 웹소켓용 토큰
+
+async def get_access_token() -> str:
+    """웹소켓 handshake 에 쓸 액세스 토큰.
+
+    **REST 와 같은 토큰을 쓴다.** 토스는 client_id 당 토큰 하나만 유효해서, 웹소켓이
+    따로 발급받으면 폴러가 쓰던 토큰이 죽는다. 위 `_TOKEN` 이 프로세스 하나가 공유하는
+    캐시이므로 그걸 그대로 꺼내 쓴다.
+
+    웹소켓 인증은 handshake 때 한 번뿐이고, 연결 유지 중 토큰이 만료돼도 끊기지
+    않는다(원문). 그래서 연결할 때만 부르면 된다.
+    """
+    async with TossClient() as client:
+        return await client._get_token()
