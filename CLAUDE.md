@@ -88,7 +88,11 @@ CLAUDE.md
 - 개요·rate limit·에러: https://openapi.tossinvest.com/openapi-docs/overview.md
 - OpenAPI JSON (스펙의 최종 근거): https://openapi.tossinvest.com/openapi-docs/latest/openapi.json
 - Base: `https://openapi.tossinvest.com`, 인증은 OAuth 2.0 Client Credentials
-- 주의: REST만 제공하며 WebSocket이 없다. 실시간은 서버 폴링으로 구현한다.
+- 지금은 서버 폴링으로 실시간을 구현하고 있다(정규장 1초 주기).
+- **웹소켓이 생겼다 (2026-08-24 원문 확인).** 예전에는 REST만 있어 폴링밖에 길이 없었으나,
+  지금은 `wss://openapi-ws.tossinvest.com/ws/v1` 로 체결·호가를 실시간으로 받을 수 있다.
+  계정당 동시 연결 2개, 연결당 구독 100건, 180초 안에 PING 필요(60초 권장).
+  폴링을 웹소켓으로 옮기는 것은 아직 하지 않았다 — 하려면 사용자와 상의한다.
 - 주의: 허용 IP에 등록되지 않은 IP에서의 호출은 403으로 차단된다. 개발은 사용자의 집에서 이루어지므로 집 IP가 등록되어 있어야 하고, 가정용 회선은 IP가 바뀔 수 있다. 원인 불명의 403이 발생하면 이것부터 확인하도록 안내한다.
 
 **OpenDART** (국내 공시·재무) — https://opendart.fss.or.kr/intro/main.do

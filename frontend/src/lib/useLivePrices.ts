@@ -10,7 +10,10 @@ import type { Country, LiveQuote, MarketState, PricesResponse } from './api'
 // 다른 탭을 보고 있을 때는 아예 멈춘다. 브라우저를 켜 둔 채 자리를 비웠는데 계속 호출이
 // 나가면 토스 호출 한도를 아무 이유 없이 태운다.
 
-const LIVE_INTERVAL_MS = 5_000
+// 서버 폴러도 정규장에 1초마다 받는다(price_poller.INTERVAL_BY_PHASE). 화면이 더
+// 느리면 서버가 새로 받아 온 값이 그만큼 늦게 보이므로 둘을 맞춘다.
+// 이 요청은 우리 서버의 캐시만 읽으므로 토스 호출이 늘지 않는다.
+const LIVE_INTERVAL_MS = 1_000
 const IDLE_INTERVAL_MS = 30_000
 
 // 아직 못 받은 종목이 있을 때 다시 물어보기까지의 간격. 서버 폴러는 새 종목을 보면 즉시
