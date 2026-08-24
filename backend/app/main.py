@@ -13,6 +13,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import PROJECT_ROOT, get_settings
+from app.middleware import ServerErrorRecorder
 from app.models.base import init_db
 from app.routers import (
     disclosures,
@@ -29,7 +30,6 @@ from app.routers import (
     us_stocks,
     watchlist,
 )
-from app.services import health as health_service
 from app.services.price_poller import poller
 from app.services.scheduler import scheduler
 
@@ -67,6 +67,9 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# 5xx 를 세어 두는 미들웨어. 순수 ASGI 다 — 이유는 app/middleware.py 첫머리 참고.
+app.add_middleware(ServerErrorRecorder)
+
 # 프론트엔드는 다른 포트에서 뜨므로 브라우저가 기본적으로 호출을 막는다. 개발용 주소만 연다.
 app.add_middleware(
     CORSMiddleware,
@@ -76,26 +79,6 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["*"],
 )
-
-
-@app.middleware("http")
-async def record_server_errors(request, call_next):
-    """5xx 를 기록해 둔다. 가동 상태 판단과 알림이 이 기록을 근거로 쓴다.
-
-    로그(journalctl)에도 남지만, 사람이 서버에 들어가 봐야 보인다. 앱이 스스로
-    "최근 30분에 오류가 몇 건 났다"고 답할 수 있어야 알림을 보낼 수 있다.
-
-    **여기서 예외를 삼키지 않는다.** 잡아서 기록만 하고 그대로 다시 던진다 —
-    FastAPI 의 기본 처리(500 응답 + 스택트레이스 로그)가 그대로 일어나야 한다.
-    """
-    try:
-        response = await call_next(request)
-    except Exception as exc:
-        health_service.record_error(request.url.path, 500, f"{type(exc).__name__}: {exc}")
-        raise
-    if response.status_code >= 500:
-        health_service.record_error(request.url.path, response.status_code, "")
-    return response
 
 
 # 국내 분석 라우터를 stocks 보다 먼저 등록한다. stocks 의 `/{symbol}` 포괄 경로가
