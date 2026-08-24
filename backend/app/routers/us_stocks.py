@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 from decimal import Decimal
 
@@ -355,6 +356,12 @@ async def get_us_financials(
 # ====================================================================== 밸류에이션
 
 
+# 현재가를 기다리는 시간. 등록하면 폴러가 곧바로 깨어나므로 길 필요가 없다.
+# 그래도 안 오면(장 마감으로 폴링이 느슨하거나 토스가 늦거나) 안내 문구로 답한다.
+VALUATION_WAIT_TRIES = 6
+VALUATION_WAIT_SEC = 0.5
+
+
 class UsValuationOut(BaseModel):
     """미국 종목의 PER · PBR · 배당수익률.
 
@@ -406,10 +413,19 @@ async def get_us_valuation(
     except Exception as exc:  # SEC 가 느리거나 막혀도 화면 전체를 죽이지 않는다
         raise HTTPException(status_code=502, detail=f"SEC 조회에 실패했습니다 — {exc}") from exc
 
-    # 현재가는 폴러가 들고 있다. 아직 못 받았으면 등록해 두고 다음 요청에 답한다.
+    # 현재가는 폴러가 들고 있다. 처음 보는 종목이면 아직 없으므로 등록하고 **잠깐
+    # 기다린다** — 등록하면 폴러가 즉시 깨어나 받아 오고, 대개 1초 안에 들어온다.
+    #
+    # 기다리지 않으면 종목을 처음 열 때마다 "낼 수 없습니다"가 뜨고 새로고침해야 나온다.
+    # 실제로 그랬다(2026-08-25 서버 확인: 첫 호출 실패, 두 번째 성공).
     poller.register([symbol])
-
     result = valuation_service.compute_us(symbol)
+    for _ in range(VALUATION_WAIT_TRIES):
+        if result is not None:
+            break
+        await asyncio.sleep(VALUATION_WAIT_SEC)
+        result = valuation_service.compute_us(symbol)
+
     if result is None:
         raise HTTPException(
             status_code=404,
