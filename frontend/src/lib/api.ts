@@ -649,3 +649,52 @@ export function fetchDisclosures(
 export function fetchLivePrices(symbols: string[]) {
   return get<PricesResponse>(`/api/prices?symbols=${symbols.join(',')}`)
 }
+
+
+// ── 일정 캘린더 ────────────────────────────────────────────────────
+
+/**
+ * 캘린더에 찍히는 일정 하나.
+ *
+ * `editable` 이 거짓이면 자동으로 만들어진 일정이다(금통위·FOMC·만기). 고치거나 지울 수
+ * 없고, `source` 에 어디서 온 값인지 적혀 있다.
+ */
+export type CalendarEvent = {
+  event_date: string
+  kind: string
+  title: string
+  editable: boolean
+  id: number | null
+  symbol: string | null
+  memo: string | null
+  source: string | null
+  source_url: string | null
+}
+
+export type MonthEvents = {
+  year: number
+  month: number
+  events: CalendarEvent[]
+}
+
+export function fetchMonthEvents(year: number, month: number) {
+  return get<MonthEvents>(`/api/events/${year}/${month}`)
+}
+
+export function createEvent(payload: {
+  event_date: string
+  kind: string
+  title: string
+  symbol?: string | null
+  memo?: string | null
+}) {
+  return request<CalendarEvent>('/api/events', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+}
+
+export function deleteEvent(id: number) {
+  return request<{ removed: boolean }>(`/api/events/${id}`, { method: 'DELETE' })
+}
