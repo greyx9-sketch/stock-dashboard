@@ -19,19 +19,25 @@ from __future__ import annotations
 from decimal import Decimal
 
 import pytest
-from fastapi.testclient import TestClient
 
 from app.main import app
 from app.models.base import init_db
 from app.services import flows as flows_service
 from app.services import watchlist as watchlist_service
+from tests.conftest import AsgiTestClient
 
 
 @pytest.fixture(scope="module")
 def client():
-    """lifespan 을 켜지 않는다. 켜면 시세 폴러와 스케줄러가 떠서 외부를 부른다."""
+    """lifespan 을 켜지 않는다. 켜면 시세 폴러와 스케줄러가 떠서 외부를 부른다.
+
+    클라이언트는 `conftest.AsgiTestClient` 다 — Starlette 의 TestClient 를 쓰지 않는
+    이유는 그쪽 docstring 에 적어 두었다.
+    """
     init_db()
-    return TestClient(app, raise_server_exceptions=False)
+    made = AsgiTestClient(app)
+    yield made
+    made.close()
 
 
 # ---------------------------------------------------------------- 경로 순서

@@ -20,6 +20,8 @@ from app.clients import toss
 from app.clients.toss import RATE_LIMITS, TossClient
 from app.config import get_settings
 
+from tests.conftest import run_async
+
 
 @pytest.fixture
 def client_pair(monkeypatch):
@@ -55,16 +57,14 @@ class _NoNetwork:
 
 def test_two_clients_share_one_token(client_pair):
     """둘째 인스턴스가 첫째의 토큰을 그대로 쓴다. 새로 발급받으면 첫째 것이 죽는다."""
-    import asyncio
-
     first, second = client_pair
     first._http = _NoNetwork()
     second._http = _NoNetwork()
     toss._TOKEN.value = "cached-token"
     toss._TOKEN.expires_at = time.monotonic() + 600
 
-    assert asyncio.run(first._get_token()) == "cached-token"
-    assert asyncio.run(second._get_token()) == "cached-token"
+    assert run_async(first._get_token()) == "cached-token"
+    assert run_async(second._get_token()) == "cached-token"
 
 
 def test_invalidating_from_one_client_clears_it_for_all(client_pair):
