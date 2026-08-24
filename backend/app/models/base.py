@@ -88,6 +88,7 @@ def init_db() -> None:
         financial,
         macro,
         note,
+        quarterly,
         quote,
         us_analysis,
         us_company,
