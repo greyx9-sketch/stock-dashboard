@@ -178,6 +178,67 @@ export function fetchFinancials(symbol: string, years = 6) {
   return get<FinancialsResponse>(`/api/stocks/${symbol}/financials?years=${years}`)
 }
 
+/**
+ * 한 분기의 재무. **두 기준을 함께 담는다** — 당분기 3개월(`revenue`)과
+ * 연초부터 누적(`revenue_cum`). 둘 다 보고서에 적힌 원값이라 화면에서 어느 쪽을
+ * 골라도 계산한 숫자가 아니다.
+ */
+export type QuarterPoint = {
+  fiscal_year: number
+  quarter: number
+  label: string
+  /** 4분기의 3개월 손익만 참 — DART 에 4분기 보고서가 없어 연간에서 빼서 구한다. */
+  derived: boolean
+
+  revenue: number | null
+  gross_profit: number | null
+  operating_income: number | null
+  net_income: number | null
+
+  revenue_cum: number | null
+  gross_profit_cum: number | null
+  operating_income_cum: number | null
+  net_income_cum: number | null
+
+  /** 분기말 잔액. 누적이라는 개념이 없다. */
+  total_assets: number | null
+  total_liabilities: number | null
+  total_equity: number | null
+
+  operating_margin: string | null
+  net_margin: string | null
+  operating_margin_cum: string | null
+  net_margin_cum: string | null
+  /** 부채총계/자본총계. 둘 다 분기말 잔액이라 분기에도 성립한다. ROE 는 내지 않는다. */
+  debt_ratio: string | null
+
+  /** 전분기가 아니라 **전년 동분기** 대비다. 분기 실적은 계절을 심하게 탄다. */
+  revenue_yoy: string | null
+  operating_income_yoy: string | null
+  revenue_cum_yoy: string | null
+  operating_income_cum_yoy: string | null
+
+  receipt_no: string
+  source_url: string
+}
+
+export type QuarterlyResponse = {
+  stock_code: string
+  corp_name: string
+  corp_code: string
+  fs_div: string
+  fs_label: string
+  currency: string
+  quarters: QuarterPoint[]
+}
+
+/** 분기·반기 재무. 처음 보는 종목은 분기마다 한 번씩 부르느라 십여 초 걸린다. */
+export function fetchQuarterlyFinancials(symbol: string, quarters = 12) {
+  return get<QuarterlyResponse>(
+    `/api/stocks/${symbol}/financials/quarterly?quarters=${quarters}`,
+  )
+}
+
 // ── 미국 주식 (SEC EDGAR + 토스 시세) ──────────────────────────────
 
 export type UsListItem = {

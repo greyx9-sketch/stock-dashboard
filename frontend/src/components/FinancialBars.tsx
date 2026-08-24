@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import type { ReactNode } from 'react'
 
 // 연간 재무 추이를 그리는 부분. 국내(DART)와 미국(SEC)이 이 컴포넌트를 함께 쓴다.
 //
@@ -17,6 +18,8 @@ export type FinancialRow = {
   label: string
   /** 회계연도 종료일처럼 연도만으로 부족할 때 덧붙이는 설명 */
   sublabel?: string
+  /** 이 행이 공시 원값이 아닐 때 그 사정. 있으면 이름 옆에 표시가 붙는다. */
+  note?: string
   revenue: number | null
   operating_income: number | null
   net_income: number | null
@@ -44,6 +47,10 @@ type Props = {
   formatPct: (value: string | null) => string
   /** 변화를 나타내는 비율. 부호를 붙인다. */
   formatDelta: (value: string | null) => string
+  /** 왼쪽 위 이름. 연간이 아닌 것을 그릴 때 바꾼다. */
+  title?: string
+  /** 이름과 항목 단추 사이에 끼워 넣을 것 (기간 전환 등) */
+  extraControls?: ReactNode
   /** 오른쪽 위에 붙는 설명 (연결/별도, 10-K 등) */
   badge?: string
   /** 맨 아래 출처 설명 */
@@ -55,6 +62,8 @@ export function FinancialBars({
   formatMoney,
   formatPct,
   formatDelta,
+  title = '연간 재무',
+  extraControls,
   badge,
   footnote,
 }: Props) {
@@ -83,7 +92,8 @@ export function FinancialBars({
   return (
     <div className="rounded-lg border border-neutral-800 bg-neutral-900/40">
       <div className="flex flex-wrap items-center gap-1 border-b border-neutral-800 px-3 py-2">
-        <span className="mr-1 text-xs text-neutral-400">연간 재무</span>
+        <span className="mr-1 text-xs text-neutral-400">{title}</span>
+        {extraControls}
         {METRICS.map((option) => (
           <button
             key={option.key}
@@ -119,7 +129,14 @@ export function FinancialBars({
               className="relative -mx-1 rounded px-1 py-1 transition-colors hover:bg-neutral-800/50"
             >
               <div className="flex items-baseline gap-2 text-xs">
-                <span className="tabular w-9 shrink-0 text-neutral-500">{row.label}</span>
+                <span className="tabular w-14 shrink-0 text-neutral-500">
+                  {row.label}
+                  {row.note && (
+                    <span title={row.note} className="ml-0.5 text-neutral-600">
+                      *
+                    </span>
+                  )}
+                </span>
                 {/* 막대는 기준선에 붙고 끝만 둥글다. 값이 없으면 그리지 않는다. */}
                 <span className="h-2.5 min-w-0 flex-1 rounded-sm bg-neutral-800/60">
                   {value !== null && (
@@ -141,6 +158,9 @@ export function FinancialBars({
                 <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-0.5 rounded bg-neutral-950/85 px-2 py-1.5 text-[11px]">
                   {row.sublabel && (
                     <Detail label="결산" value={row.sublabel} />
+                  )}
+                  {row.note && (
+                    <div className="col-span-2 text-[11px] text-neutral-500">{row.note}</div>
                   )}
                   <Detail
                     label="매출"
@@ -165,10 +185,16 @@ export function FinancialBars({
         })}
       </div>
 
+      {/* 값이 없는 지표는 자리째 뺀다. 분기에는 ROE 가 없는데, 빈 칸을 남겨 두면
+          '아직 못 받았나' 로 읽힌다 — 안 내는 것과 못 받은 것은 다르다. */}
       <dl className="grid grid-cols-3 gap-x-3 gap-y-1 border-t border-neutral-800 px-3 py-2 text-xs">
-        <Stat label="영업이익률" value={formatPct(latest.operating_margin)} />
-        <Stat label="ROE" value={formatPct(latest.roe)} />
-        <Stat label="부채비율" value={formatPct(latest.debt_ratio)} />
+        {latest.operating_margin !== null && (
+          <Stat label="영업이익률" value={formatPct(latest.operating_margin)} />
+        )}
+        {latest.roe !== null && <Stat label="ROE" value={formatPct(latest.roe)} />}
+        {latest.debt_ratio !== null && (
+          <Stat label="부채비율" value={formatPct(latest.debt_ratio)} />
+        )}
       </dl>
 
       <div className="border-t border-neutral-800 px-3 py-1.5 text-[11px] text-neutral-600">
@@ -177,7 +203,7 @@ export function FinancialBars({
           href={latest.source_url}
           target="_blank"
           rel="noreferrer"
-          className="underline decoration-neutral-700 underline-offset-2 hover:text-neutral-400"
+          className="whitespace-nowrap underline decoration-neutral-700 underline-offset-2 hover:text-neutral-400"
         >
           원문 보기
         </a>

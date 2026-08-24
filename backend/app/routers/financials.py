@@ -194,6 +194,12 @@ class QuarterPoint(BaseModel):
     operating_margin_cum: Decimal | None = Field(description="영업이익률 (%) — 누적 기준")
     net_margin_cum: Decimal | None = Field(description="순이익률 (%) — 누적 기준")
 
+    # ROE 는 내지 않는다. 순이익은 3개월치인데 자본은 잔액이라 둘을 나누면 연간과
+    # 견줄 수 없는 숫자가 된다(연율로 고치는 것은 또 다른 가정이다).
+    debt_ratio: Decimal | None = Field(
+        description="부채비율 (%) = 부채총계/자본총계. 둘 다 분기말 잔액이라 분기에도 성립한다"
+    )
+
     revenue_yoy: Decimal | None = Field(description="매출 증가율 (%) — 전년 동분기 대비")
     operating_income_yoy: Decimal | None = Field(description="영업이익 증가율 (%) — 전년 동분기")
     revenue_cum_yoy: Decimal | None = Field(description="누적 매출 증가율 (%) — 전년 같은 시점")
@@ -309,6 +315,7 @@ def _to_quarter(point: dict, year_ago: dict | None) -> QuarterPoint:
         net_margin=_pct(point["net_income"], point["revenue"]),
         operating_margin_cum=_pct(point["operating_income_cum"], point["revenue_cum"]),
         net_margin_cum=_pct(point["net_income_cum"], point["revenue_cum"]),
+        debt_ratio=_pct(point["total_liabilities"], point["total_equity"]),
         # **전분기가 아니라 전년 동분기와 견준다.** 분기 실적은 계절을 심하게 타서
         # 직전 분기와 비교하면 해마다 같은 자리에서 같은 착시가 생긴다.
         revenue_yoy=_growth(point["revenue"], prev.get("revenue")),
