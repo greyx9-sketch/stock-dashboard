@@ -10,6 +10,7 @@ SQLite 파일 하나에 전부 담는다. 이 프로젝트는 읽기 전용 대�
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from sqlalchemy import create_engine, event
@@ -17,6 +18,10 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.config import PROJECT_ROOT, get_settings
+from app.models.schema_sync import add_missing_columns
+
+
+logger = logging.getLogger(__name__)
 
 
 class Base(DeclarativeBase):
@@ -67,9 +72,14 @@ def get_session() -> Session:
 
 
 def init_db() -> None:
-    """아직 없는 테이블을 만든다. 이미 있으면 아무 것도 하지 않는다.
+    """없는 테이블을 만들고, 모델에 새로 생긴 컬럼을 기존 테이블에 붙인다.
 
-    컬럼이 바뀌는 변경은 이 함수가 처리하지 못한다. 그때가 오면 마이그레이션 도구를 붙인다.
+    **서버가 뜰 때 폴러·스케줄러보다 먼저 불려야 한다**(`app/main.py` 참고).
+    컬럼 추가는 SQLite 에서 배타 락을 잡으므로, 백그라운드 작업이 DB 를 쓰기 시작하기
+    전에 끝나야 안전하다. 이 순서를 바꾸지 말 것.
+
+    컬럼 **삭제·타입 변경**은 여전히 처리하지 못한다. 그때가 오면 마이그레이션 도구를
+    붙인다 — 판단 근거는 `app/models/schema_sync.py` 첫머리에 적어 두었다.
     """
     # import 해야 테이블 정의가 Base 에 등록된다. 순환 import 를 피해 함수 안에서 부른다.
     from app.models import (  # noqa: F401
@@ -85,3 +95,9 @@ def init_db() -> None:
     )
 
     Base.metadata.create_all(engine)
+
+    # create_all 은 **없는 테이블만** 만든다. 이미 있는 테이블에 컬럼이 늘어난 경우는
+    # 여기서 따로 붙인다. 반드시 create_all 다음이어야 한다.
+    added = add_missing_columns(engine, Base.metadata)
+    if added:
+        logger.info("컬럼 추가: %s", ", ".join(added))
