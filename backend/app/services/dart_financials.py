@@ -49,9 +49,15 @@ ACCOUNT_IDS: dict[str, tuple[str, ...]] = {
         "ifrs-full_ProfitLossFromOperatingActivities",
     ),
     "net_income": ("ifrs-full_ProfitLoss",),
+    # **PER·PBR 은 지배주주 몫으로 낸다.** 연결 재무제표의 당기순이익·자본총계에는
+    # 비지배지분(자회사의 남의 몫)이 섞여 있어서, 그대로 쓰면 주주가 가진 값어치와
+    # 다른 숫자가 나온다. LG화학 2025 가 그 예다 —
+    # 당기순이익 -0.98조인데 지배주주 몫은 -1.82조다(비지배지분이 흑자여서).
+    "net_income_owners": ("ifrs-full_ProfitLossAttributableToOwnersOfParent",),
     "total_assets": ("ifrs-full_Assets",),
     "total_liabilities": ("ifrs-full_Liabilities",),
     "total_equity": ("ifrs-full_Equity",),
+    "total_equity_owners": ("ifrs-full_EquityAttributableToOwnersOfParent",),
 }
 
 # 계정 ID 로 못 찾았을 때 쓸 한글 계정명. 표준 ID 를 안 쓰는 회사가 드물게 있다.
@@ -60,9 +66,14 @@ ACCOUNT_NAMES: dict[str, tuple[str, ...]] = {
     "gross_profit": ("매출총이익",),
     "operating_income": ("영업이익", "영업이익(손실)"),
     "net_income": ("당기순이익", "당기순이익(손실)", "당기순손익"),
+    # **지배주주 몫에는 한글 이름 대안을 두지 않는다.** 회사마다 "지배기업 소유주지분"
+    # 이라고만 적는데, 그 이름을 **포괄손익 줄도 똑같이** 쓴다(삼성전자·카카오가 그렇다).
+    # 이름으로 찾으면 순이익 대신 포괄손익을 집게 되므로 계정 ID 로만 찾는다.
+    "net_income_owners": (),
     "total_assets": ("자산총계",),
     "total_liabilities": ("부채총계",),
     "total_equity": ("자본총계",),
+    "total_equity_owners": (),
 }
 
 WHICH_SECTIONS: dict[str, tuple[str, ...]] = {
@@ -70,9 +81,11 @@ WHICH_SECTIONS: dict[str, tuple[str, ...]] = {
     "gross_profit": INCOME_SECTIONS,
     "operating_income": INCOME_SECTIONS,
     "net_income": INCOME_SECTIONS,
+    "net_income_owners": INCOME_SECTIONS,
     "total_assets": BALANCE_SECTIONS,
     "total_liabilities": BALANCE_SECTIONS,
     "total_equity": BALANCE_SECTIONS,
+    "total_equity_owners": BALANCE_SECTIONS,
 }
 
 # 한 응답이 담고 있는 세 개 연도. (금액 필드, 당기 대비 몇 년 전인가)
@@ -178,6 +191,7 @@ def _save(corp_code: str, fs_div: str, years: list[YearlyFinancial]) -> int:
             **y.values,
             "currency": y.currency,
             "receipt_no": y.receipt_no,
+            "extract_version": EXTRACT_VERSION,
         }
         for y in years
     ]
@@ -193,20 +207,41 @@ def _save(corp_code: str, fs_div: str, years: list[YearlyFinancial]) -> int:
             # 뒤 보고서에서 재작성(restatement)되기 때문이다(KB금융 2023 자본총계
             # 58.9조 → 58.6조). 항상 **더 나중에 제출된 보고서**의 값을 남긴다.
             # 접수번호가 YYYYMMDD###### 라 문자열 비교가 곧 제출 시점 비교다.
-            where=sqlite_insert(DartFinancial).excluded.receipt_no > DartFinancial.receipt_no,
+            #
+            # `>` 가 아니라 `>=` 인 이유: **같은 보고서를 다시 받았을 때도 덮어써야 한다.**
+            # 뽑는 항목이 늘어나면(지배주주 몫을 추가한 2026-08-25 처럼) 이미 저장된 행의
+            # 새 칸이 비어 있는데, `>` 면 같은 접수번호라 영영 채워지지 않는다. 같은
+            # 보고서의 값은 어차피 같으므로 다시 써도 달라지는 것이 없다.
+            where=sqlite_insert(DartFinancial).excluded.receipt_no >= DartFinancial.receipt_no,
         )
         session.execute(stmt)
         session.commit()
     return len(rows)
 
 
+# 추출기 판 번호. **뽑는 항목이 늘어날 때마다 올린다.**
+#
+#   1  최초 (매출·이익·자산·부채·자본)
+#   2  지배주주 몫 추가 (2026-08-25) — PER·PBR 을 이 값으로 낸다
+#
+# 번호가 낮거나 비어 있는 행은 "가지고 있다"로 치지 않는다. 종목을 처음 열 때 한 번
+# 다시 받아 채우고, 그 뒤로는 번호가 맞아 다시 받지 않는다. 배포에 수동 단계를
+# 만들지 않으려는 것이다(`app/models/schema_sync.py` 와 같은 판단).
+#
+# **시각으로 판단하지 않는다.** 처음엔 "2026-08-25 이후에 받은 것만 최신"으로 짰는데,
+# 한국 날짜로는 새 날이어도 UTC 로는 전날이라 방금 받은 행이 낡은 것으로 판정됐다.
+EXTRACT_VERSION = 2
+
+
 def stored_years(corp_code: str, fs_div: str) -> set[int]:
+    """이미 받아 둔 회계연도. **낡은 판으로 뽑은 행은 빼고** 돌려준다(위 상수 참고)."""
     with get_session() as session:
         return set(
             session.execute(
                 select(DartFinancial.fiscal_year)
                 .where(DartFinancial.corp_code == corp_code)
                 .where(DartFinancial.fs_div == fs_div)
+                .where(DartFinancial.extract_version >= EXTRACT_VERSION)
             ).scalars()
         )
 

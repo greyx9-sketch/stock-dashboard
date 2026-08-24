@@ -18,6 +18,8 @@ from app.clients.dart import DartError
 from app.models.financial import DartFinancial
 from app.models.quarterly import DartQuarterly
 from app.services import dart_corps, dart_financials, dart_quarterly
+from app.services import dividends as dividends_service
+from app.services import valuation as valuation_service
 
 router = APIRouter(prefix="/api/stocks", tags=["재무"])
 
@@ -96,7 +98,14 @@ def _to_year(row: DartFinancial, previous: DartFinancial | None) -> FinancialYea
         operating_income_growth=_growth(
             row.operating_income, previous.operating_income if previous else None
         ),
-        roe=_pct(row.net_income, row.total_equity),
+        # **ROE 도 지배주주 몫으로 낸다.** 바로 위 밸류에이션 블록의 PER·PBR 이 그 기준인데
+        # 여기만 전체로 내면 한 화면 안에서 기준이 갈린다(카카오: 전체 3.40% / 지배주주
+        # 4.35%). 지배주주 몫이 없는 행 — 별도재무제표이거나 아직 다시 받지 않은 행 —
+        # 은 전체로 물러선다.
+        roe=_pct(
+            row.net_income_owners if row.net_income_owners is not None else row.net_income,
+            row.total_equity_owners if row.total_equity_owners is not None else row.total_equity,
+        ),
         debt_ratio=_pct(row.total_liabilities, row.total_equity),
         receipt_no=row.receipt_no,
         source_url=f"https://dart.fss.or.kr/dsaf001/main.do?rcpNo={row.receipt_no}",
@@ -401,3 +410,86 @@ async def get_quarterly_financials(
             _to_quarter(p, lookup.get((p["fiscal_year"] - 1, p["quarter"]))) for p in points
         ],
     )
+
+
+# ====================================================================== 밸류에이션
+
+
+class ValuationOut(BaseModel):
+    """PER · PBR · 배당수익률. 값마다 무엇으로 냈는지가 함께 온다."""
+
+    stock_code: str
+    corp_name: str
+
+    price: int = Field(description="계산에 쓴 주가 (원)")
+    price_label: str = Field(description="실시간인지 확정 종가인지. 기준일이 다르다")
+    listed_shares: int = Field(description="상장주식수 (보통주). KRX 기준")
+    market_cap: int = Field(description="주가 × 상장주식수 (원)")
+
+    fiscal_year: int | None = Field(description="PER·PBR 의 근거가 된 회계연도")
+    fs_label: str | None = Field(description="연결 / 별도")
+    owners_basis: bool = Field(
+        description="지배주주 몫으로 계산했는가. 별도재무제표에는 비지배지분이 없어 거짓이다"
+    )
+
+    eps: int | None = Field(description="주당순이익 (원) = 지배주주순이익 / 상장주식수")
+    bps: int | None = Field(description="주당순자산 (원) = 지배주주자본 / 상장주식수")
+    dps: int | None = Field(description="주당 현금배당금 (원)")
+    dps_year: int | None = Field(description="그 배당이 어느 회계연도 것인지")
+
+    per: Decimal | None
+    pbr: Decimal | None
+    dividend_yield: Decimal | None = Field(description="주당배당금 / 현재가 (%)")
+
+    per_note: str | None = Field(description="PER 을 내지 못한 사정")
+    pbr_note: str | None = Field(description="PBR 을 내지 못한 사정")
+    dividend_note: str | None = Field(description="배당수익률을 내지 못한 사정")
+
+
+@router.get("/{symbol}/valuation", summary="밸류에이션 (PER·PBR·배당수익률)")
+async def get_valuation(
+    symbol: str = Path(description="단축코드 6자리 (예: 005930)", pattern=r"^\d{6}$"),
+) -> ValuationOut:
+    """**모든 값을 원자료에서 그때그때 계산한다.** 저장하지 않는다 — 주가가 계속 바뀌므로
+    저장하는 순간 낡은 값이 된다.
+
+    분모는 **지배주주 몫**을 쓴다. 연결 순이익·자본에는 비지배지분이 섞여 있어 그대로
+    나누면 주주가 가진 값어치와 다른 숫자가 나온다(판단 근거는 `services/valuation.py`
+    첫머리 참고).
+
+    처음 조회하는 종목은 OpenDART 를 몇 번 부르느라 몇 초 걸린다.
+    """
+    corp = dart_corps.get_corp(symbol)
+    if corp is None:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"'{symbol}' 의 DART 고유번호를 찾지 못했습니다.\n"
+                "우선주나 비상장 종목은 재무 자료가 없어 밸류에이션을 낼 수 없습니다."
+            ),
+        )
+
+    try:
+        fs_div, _ = await dart_financials.ensure_financials(corp.corp_code, years=2)
+        # 배당은 재무와 같은 회계연도를 본다. 최근 두 해를 채워 두면 결산 직후처럼
+        # 최신 해가 아직 없을 때도 직전 해로 보여줄 수 있다.
+        latest_year = dart_financials.latest_annual_year()
+        await dividends_service.ensure_dividends(corp.corp_code, [latest_year, latest_year - 1])
+    except DartError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    result = valuation_service.compute(
+        symbol, corp.corp_code, fs_div, FS_LABEL.get(fs_div, fs_div)
+    )
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"'{corp.corp_name}' 의 주가나 상장주식수를 찾지 못했습니다.\n"
+                "KRX 확정 시세가 아직 수집되지 않은 종목일 수 있습니다."
+            ),
+        )
+
+    return ValuationOut(stock_code=symbol, corp_name=corp.corp_name, **vars(result))

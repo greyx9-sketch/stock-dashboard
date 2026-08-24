@@ -355,6 +355,25 @@ class DartClient:
             return []  # 해당 연도 보고서가 없다. 오류가 아니다.
         return payload.get("list") or []
 
+    # ------------------------------------------------------------------ 배당
+
+    async def get_dividends(
+        self, corp_code: str, *, year: int, report_code: str = ANNUAL_REPORT
+    ) -> list[dict[str, str]]:
+        """배당에 관한 사항. 없으면 빈 목록.
+
+        재무제표와 응답 모양이 전혀 다르다 — 계정 ID 가 아니라 `se`(구분)에 한글
+        문자열이 든 표다. 해석은 `services/dividends.py` 가 맡는다.
+        """
+        payload = await self._get_json(
+            # BASE_URL 에 이미 `/api` 가 들어 있다. 여기서 또 붙이면 경로가 겹친다.
+            "/alotMatter.json",
+            {"corp_code": corp_code, "bsns_year": str(year), "reprt_code": report_code},
+        )
+        if payload is None:
+            return []  # 배당을 하지 않는 회사이거나 그 해 보고서가 없다. 오류가 아니다.
+        return payload.get("list") or []
+
     # ------------------------------------------------------------------ 기업개황
 
     async def get_company(self, corp_code: str) -> dict[str, Any] | None:

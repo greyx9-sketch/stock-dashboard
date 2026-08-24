@@ -4,6 +4,7 @@ import type { LiveQuote, MarketState, PricePoint, Quote } from '../lib/api'
 import { PriceChart } from './PriceChart'
 import { DisclosureList } from './DisclosureList'
 import { FinancialSummary } from './FinancialSummary'
+import { ValuationBox } from './ValuationBox'
 import { ReportAnalysis } from './ReportAnalysis'
 import { SupplyDemand } from './SupplyDemand'
 import { StockNotes } from './StockNotes'
@@ -150,6 +151,10 @@ export function StockDetailPanel({ symbol, live, market }: Props) {
 
       {/* 메모는 재무·분석보다 위에 둔다. 아래로 밀면 긴 분석을 지나쳐야 해서 안 쓰게 된다. */}
       <StockNotes symbol={symbol} />
+
+      {/* 지표를 재무표 위에 둔다. PER·PBR 을 먼저 보고 그 근거인 추이로 내려가는
+          순서가 자연스럽다. */}
+      <ValuationBox symbol={symbol} />
 
       <FinancialSummary symbol={symbol} />
 

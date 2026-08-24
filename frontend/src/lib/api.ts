@@ -234,6 +234,45 @@ export type QuarterlyResponse = {
   quarters: QuarterPoint[]
 }
 
+/**
+ * 밸류에이션. **저장하지 않고 그때그때 계산해서 온다** — 주가가 계속 바뀌기 때문이다.
+ *
+ * 비율은 문자열로 온다(서버가 소수 둘째 자리로 고정한 Decimal). 화면에서 다시 숫자로
+ * 바꿔 계산하지 않는다.
+ */
+export type Valuation = {
+  stock_code: string
+  corp_name: string
+
+  price: number
+  price_label: string
+  listed_shares: number
+  market_cap: number
+
+  fiscal_year: number | null
+  fs_label: string | null
+  /** 지배주주 몫으로 냈는가. 별도재무제표에는 비지배지분이 없어 거짓이다. */
+  owners_basis: boolean
+
+  eps: number | null
+  bps: number | null
+  dps: number | null
+  dps_year: number | null
+
+  per: string | null
+  pbr: string | null
+  dividend_yield: string | null
+
+  /** 값이 없을 때 그 사정. 화면은 "—" 대신 이 문장을 보여준다. */
+  per_note: string | null
+  pbr_note: string | null
+  dividend_note: string | null
+}
+
+export function fetchValuation(symbol: string) {
+  return get<Valuation>(`/api/stocks/${symbol}/valuation`)
+}
+
 /** 분기·반기 재무. 처음 보는 종목은 분기마다 한 번씩 부르느라 십여 초 걸린다. */
 export function fetchQuarterlyFinancials(symbol: string, quarters = 12) {
   return get<QuarterlyResponse>(

@@ -35,11 +35,23 @@ class DartFinancial(Base):
     gross_profit: Mapped[int | None] = mapped_column(BigInteger, nullable=True)  # 매출총이익
     operating_income: Mapped[int | None] = mapped_column(BigInteger, nullable=True)  # 영업이익
     net_income: Mapped[int | None] = mapped_column(BigInteger, nullable=True)  # 당기순이익
+    # 지배주주 몫. PER 은 이 값으로 낸다 — 연결 순이익에는 비지배지분이 섞여 있다.
+    net_income_owners: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
 
     # 재무상태표
     total_assets: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     total_liabilities: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     total_equity: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    # 지배주주 몫. PBR 은 이 값으로 낸다.
+    total_equity_owners: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+
+    # 이 행을 **어느 판의 추출기로** 뽑았는지. 뽑는 항목이 늘어나면 이 번호를 올리고,
+    # 번호가 낮은 행은 다시 받아 채운다(`services/dart_financials.py` 참고).
+    #
+    # 시각(fetched_at)으로 판단하지 않는 이유: 시간대 때문에 어긋난다. 실제로 한 번
+    # 겪었다 — 한국 날짜로는 새 날인데 UTC 로는 전날이라, 방금 받은 행이 '낡은 것'으로
+    # 판정됐다. 번호는 시계와 무관하다.
+    extract_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     currency: Mapped[str] = mapped_column(String(5), default="KRW")
     # 어느 보고서에서 나온 값인지. 숫자가 이상할 때 원문을 바로 열어 볼 수 있어야 한다.
