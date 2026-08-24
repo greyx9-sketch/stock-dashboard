@@ -125,8 +125,19 @@ def _check_db() -> Check:
 def _check_poller(now: datetime) -> Check:
     """현재가 폴러.
 
-    **장이 닫혀 있으면 안 부르는 것이 정상이다.** 그때 "갱신이 멈췄다"고 울리면
-    매일 밤 오작동한다. 그래서 어느 시장이든 장이 열려 있을 때만 시간을 따진다.
+    폴러가 **안 부르는 것이 정상인 경우가 둘** 있다. 둘 다 걸러내지 않으면 멀쩡한데
+    운다:
+
+    1. **장이 닫혀 있을 때.** 안 걸러내면 매일 밤 울린다.
+    2. **아무도 화면을 안 보고 있을 때.** 폴러는 보고 있는 종목만 부른다
+       (`price_poller._tick` 참고). 아무도 안 보고 있으면 장중에도 한 번도 안 부르는
+       것이 설계대로다.
+
+    2번이 빠져 있어서 실제로 오작동했다(2026-08-24). 사이트를 아무도 안 열어 둔 채
+    미국 프리마켓이 열리자 `down` 이 떴다 — 빨간 띠에 10분마다 텔레그램까지. 폴러는
+    멀쩡했고, 종목 하나를 등록하자 12초 만에 `ok` 로 돌아왔다.
+
+    **멀쩡한데 우는 경보는 진짜 고장을 묻는다.** 며칠이면 무시하게 되기 때문이다.
     """
     live = any(state.phase in LIVE_PHASES for state in poller.markets.values())
     last = poller.last_success_at
@@ -138,8 +149,16 @@ def _check_poller(now: datetime) -> Check:
             return Check("현재가", "degraded", f"마지막 호출이 실패했습니다 — {error}"[:200])
         return Check("현재가", "ok", "장 마감 — 갱신하지 않는 것이 정상")
 
+    if poller.watching == 0:
+        # 오류는 여기서도 알려 준다 — 마지막 시도가 실패한 채로 조용해진 것일 수 있다.
+        if error:
+            return Check("현재가", "degraded", f"마지막 호출이 실패했습니다 — {error}"[:200])
+        return Check("현재가", "ok", "보고 있는 화면이 없어 부르지 않는 중 — 정상")
+
     if last is None:
-        return Check("현재가", "down", "장중인데 아직 한 번도 받지 못했습니다.")
+        # 여기까지 왔으면 보고 있는 종목이 있다는 뜻이다. 등록되면 폴러가 즉시 깨어나므로
+        # 그러고도 한 번도 못 받았다면 진짜로 멈춘 것이다.
+        return Check("현재가", "down", "장중이고 보고 있는 화면도 있는데 한 번도 받지 못했습니다.")
 
     age = (now - last).total_seconds()
     if age > POLLER_STALL_SEC:

@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from app.services import health
-from app.services.health import Check, _check_errors, _worst, record_error
+from app.services.health import Check, _check_errors, _check_poller, _worst, record_error
 
 
 def setup_function() -> None:
@@ -81,3 +81,75 @@ def test_buffer_does_not_grow_without_bound():
     for i in range(health.ERROR_BUFFER * 3):
         record_error(f"/api/{i}", 500, "boom")
     assert len(health._errors) == health.ERROR_BUFFER
+
+
+# ---------------------------------------------------------------- 현재가 폴러
+#
+# 폴러가 **안 부르는 것이 정상인 경우**를 오작동으로 읽지 않는지 본다. 여기가 이 파일에서
+# 가장 값어치 있는 부분이다 — 실제로 한 번 틀렸다(2026-08-24, 아래 회귀 테스트).
+
+
+class _FakeMarket:
+    def __init__(self, phase: str) -> None:
+        self.phase = phase
+
+
+def _fake_poller(monkeypatch, *, phase: str, watching: int, last=None, error=None) -> None:
+    """폴러를 통째로 흉내 낸다. 진짜 폴러는 이벤트 루프와 외부 API 를 붙들고 있다."""
+    monkeypatch.setattr(health.poller, "_markets", {"US": _FakeMarket(phase)}, raising=False)
+    monkeypatch.setattr(type(health.poller), "markets", property(lambda self: {"US": _FakeMarket(phase)}))
+    monkeypatch.setattr(type(health.poller), "watching", property(lambda self: watching))
+    monkeypatch.setattr(type(health.poller), "last_success_at", property(lambda self: last))
+    monkeypatch.setattr(type(health.poller), "last_error", property(lambda self: error))
+
+
+def test_closed_market_is_not_an_alarm(monkeypatch):
+    """장이 닫혀 있으면 안 부르는 것이 정상이다. 아니면 매일 밤 운다."""
+    _fake_poller(monkeypatch, phase="CLOSED", watching=0)
+    assert _check_poller(datetime.now(timezone.utc)).status == "ok"
+
+
+def test_nobody_watching_is_not_an_alarm(monkeypatch):
+    """**회귀(2026-08-24).** 장중이어도 보고 있는 화면이 없으면 폴러는 안 부른다.
+
+    폴러는 등록된 종목만 부른다(`price_poller._tick`). 아무도 사이트를 안 열어 둔 채
+    미국 프리마켓이 열리자 `down` 이 떴다 — 빨간 띠에 10분마다 텔레그램까지. 폴러는
+    멀쩡했고, 종목 하나를 등록하자 12초 만에 `ok` 로 돌아왔다.
+    """
+    _fake_poller(monkeypatch, phase="PRE", watching=0, last=None)
+    check = _check_poller(datetime.now(timezone.utc))
+    assert check.status == "ok"
+
+
+def test_watching_but_never_received_is_down(monkeypatch):
+    """반대쪽도 못 박는다 — 보고 있는데 못 받으면 그건 진짜 고장이다.
+
+    등록되면 폴러가 즉시 깨어나므로, 그러고도 한 번도 못 받았다면 멈춘 것이다.
+    """
+    _fake_poller(monkeypatch, phase="REGULAR", watching=3, last=None)
+    assert _check_poller(datetime.now(timezone.utc)).status == "down"
+
+
+def test_watching_but_stalled_is_down(monkeypatch):
+    """보고 있는데 갱신이 오래 끊기면 down."""
+    stale = datetime.now(timezone.utc) - timedelta(seconds=health.POLLER_STALL_SEC + 60)
+    _fake_poller(monkeypatch, phase="REGULAR", watching=1, last=stale)
+    assert _check_poller(datetime.now(timezone.utc)).status == "down"
+
+
+def test_fresh_update_is_ok(monkeypatch):
+    """정상 경로 — 방금 받았으면 ok."""
+    fresh = datetime.now(timezone.utc) - timedelta(seconds=5)
+    _fake_poller(monkeypatch, phase="REGULAR", watching=1, last=fresh)
+    assert _check_poller(datetime.now(timezone.utc)).status == "ok"
+
+
+def test_error_is_reported_even_when_quiet(monkeypatch):
+    """조용한 것이 정상인 상황에도 **마지막 오류는 숨기지 않는다.**
+
+    허용 IP 문제처럼 밤에도 고칠 수 있는 것들이 여기로 드러난다.
+    """
+    _fake_poller(monkeypatch, phase="PRE", watching=0, error="403 Forbidden")
+    check = _check_poller(datetime.now(timezone.utc))
+    assert check.status == "degraded"
+    assert "403" in check.detail
