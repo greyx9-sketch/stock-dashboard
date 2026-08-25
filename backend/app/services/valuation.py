@@ -474,3 +474,102 @@ def compute_us(ticker: str) -> UsValuation | None:
         pbr_note=pbr_note,
         dividend_note=dividend_note,
     )
+
+
+# ====================================================================== 미국 — 여러 종목
+#
+# 동종업계 비교가 쓴다. 국내 `screen_rows` 와 계산은 같고 **주가를 구하는 길이 다르다.**
+#
+# 국내에는 KRX 확정 종가라는 물러설 자리가 있어 모든 종목의 주가를 안다. 미국은 폴러가
+# 들고 있는 것뿐이라, 비교할 종목들을 먼저 등록해 두고 값이 오기를 기다려야 한다
+# (`routers/us_stocks.py`). 끝내 못 받은 종목은 지표를 비운 채 이름만 나온다 —
+# 목록에서 통째로 빼면 "그 회사가 동종업계에 없다"로 잘못 읽힌다.
+
+
+@dataclass(frozen=True)
+class UsScreenRow:
+    ticker: str
+    name: str
+    price: Decimal | None
+    market_cap: Decimal | None
+    fiscal_year: int | None
+    per: Decimal | None
+    pbr: Decimal | None
+    roe: Decimal | None
+    revenue_growth: Decimal | None
+
+
+def us_screen_rows(tickers: list[str]) -> list[UsScreenRow]:
+    """여러 미국 종목의 지표를 한꺼번에. 재무가 없는 종목은 빠진다."""
+    from app.models.us_company import SecCompany, SecFinancial
+
+    if not tickers:
+        return []
+
+    with get_session() as session:
+        companies = list(
+            session.execute(
+                select(SecCompany).where(SecCompany.ticker.in_(tickers))
+            ).scalars()
+        )
+        if not companies:
+            return []
+
+        ciks = [c.cik for c in companies]
+        latest: dict[str, SecFinancial] = {}
+        by_year: dict[tuple[str, int], SecFinancial] = {}
+        for row in session.execute(
+            select(SecFinancial)
+            .where(SecFinancial.cik.in_(ciks))
+            .order_by(SecFinancial.fiscal_year.desc())
+        ).scalars():
+            latest.setdefault(row.cik, row)
+            by_year[(row.cik, row.fiscal_year)] = row
+
+    prices = poller.snapshot(tickers)
+
+    out: list[UsScreenRow] = []
+    for company in companies:
+        financial = latest.get(company.cik)
+        if financial is None:
+            continue
+
+        cached = prices.get(company.ticker)
+        price = cached.last_price if cached else None
+        shares = company.shares_outstanding
+        market_cap = price * Decimal(shares) if price is not None and shares else None
+
+        # us-gaap 은 이미 지배주주 기준이다(`NetIncomeLoss` 가 모회사 몫).
+        income = financial.net_income
+        equity = financial.total_equity
+        previous = by_year.get((company.cik, financial.fiscal_year - 1))
+
+        out.append(
+            UsScreenRow(
+                ticker=company.ticker,
+                name=company.name,
+                price=price,
+                market_cap=market_cap,
+                fiscal_year=financial.fiscal_year,
+                per=(
+                    (market_cap / Decimal(income)).quantize(CENT)
+                    if market_cap is not None and income and income > 0
+                    else None
+                ),
+                pbr=(
+                    (market_cap / Decimal(equity)).quantize(CENT)
+                    if market_cap is not None and equity and equity > 0
+                    else None
+                ),
+                roe=_percent(income, equity) if equity and equity > 0 else None,
+                revenue_growth=(
+                    _percent(financial.revenue - previous.revenue, previous.revenue)
+                    if previous is not None
+                    and financial.revenue is not None
+                    and previous.revenue is not None
+                    and previous.revenue > 0
+                    else None
+                ),
+            )
+        )
+    return out

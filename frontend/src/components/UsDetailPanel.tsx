@@ -14,6 +14,7 @@ import type {
 } from '../lib/api'
 import { UsValuationBox } from './UsValuationBox'
 import { UsFinancialPeriod } from './UsFinancialPeriod'
+import { UsPeerComparison } from './UsPeerComparison'
 import { TenKAnalysis } from './TenKAnalysis'
 import { StockNotes } from './StockNotes'
 import { WatchStar } from './WatchStar'
@@ -141,6 +142,10 @@ export function UsDetailPanel({ symbol, listItem, live, market }: Props) {
       {/* 지표를 재무표 위에 둔다. 국내 화면과 같은 순서다 — PER·PBR 을 먼저 보고
           그 근거인 추이로 내려간다. */}
       <UsValuationBox ticker={symbol} />
+
+      {/* 지표 바로 아래. 국내 화면과 같은 순서다 — "이 회사 PER 이 42배"를 보고
+          "업종은 어떤가"로 이어진다. 업종을 모르면 아무것도 그리지 않는다. */}
+      <UsPeerComparison ticker={symbol} />
 
       {/* 연간/분기 전환은 이 안에 있다. 연간은 위에서 이미 받아 두었으므로 넘겨주고,
           분기는 처음 누를 때만 따로 받는다. */}

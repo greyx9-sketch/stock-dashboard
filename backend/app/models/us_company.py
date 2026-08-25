@@ -33,6 +33,14 @@ class SecCompany(Base):
     shares_outstanding: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     shares_as_of: Mapped[str | None] = mapped_column(String(10), nullable=True)
 
+    # SEC 표준산업분류(SIC). 동종업계 비교의 묶는 기준이다.
+    #
+    # **국내(DART)보다 다루기 쉽다.** 네 자리로 길이가 일정하고 이름까지 함께 온다
+    # (`sicDescription`). 그래서 국내처럼 앞자리를 잘라 묶을 필요가 없고, 화면에
+    # "Semiconductors & Related Devices" 라고 그대로 적을 수 있다.
+    sic: Mapped[str | None] = mapped_column(String(6), nullable=True)
+    sic_description: Mapped[str | None] = mapped_column(String(200), nullable=True)
+
     fetched_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )

@@ -136,13 +136,34 @@ class KrxScheduler:
 
     async def _load_universe(self) -> None:
         """유니버스 적재. **실패해도 서버를 흔들지 않는다** — 스크리너가 어제 자료로
-        도는 것은 사이트가 멈추는 것과 다르다."""
+        도는 것은 사이트가 멈추는 것과 다르다.
+
+        국내와 미국을 이어서 채운다. 미국이 실패해도 국내는 이미 끝나 있다.
+        """
         from app.services import universe
 
         try:
             await universe.load()
         except Exception:
-            logger.exception("유니버스 적재 실패 — 다음 주기에 다시 시도한다")
+            logger.exception("국내 유니버스 적재 실패 — 다음 주기에 다시 시도한다")
+
+        try:
+            await self._load_us_universe()
+        except Exception:
+            logger.exception("미국 유니버스 적재 실패 — 다음 주기에 다시 시도한다")
+
+    async def _load_us_universe(self) -> None:
+        """미국 동종업계 비교가 볼 종목들.
+
+        **거래대금 상위에서 고른다.** 국내처럼 시가총액을 다 알지 못해서인데, 사용자가
+        실제로 화면에서 보는 종목이라 실용적으로는 같은 자리를 덮는다.
+        """
+        from app.routers.us_stocks import top_us_symbols
+        from app.services import us_universe
+
+        tickers = await top_us_symbols(us_universe.DEFAULT_SIZE)
+        if tickers:
+            await us_universe.load(tickers)
 
     def shutdown(self) -> None:
         if self._scheduler.running:

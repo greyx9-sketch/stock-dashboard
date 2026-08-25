@@ -876,3 +876,37 @@ export function fetchUsQuarterly(ticker: string, quarters = 12) {
     `/api/us/${encodeURIComponent(ticker)}/financials/quarterly?quarters=${quarters}`,
   )
 }
+
+/**
+ * 미국 동종업계 비교.
+ *
+ * **미리 받아 둔 종목 안에서만 나온다.** 미국은 회사 하나의 재무를 받는 데 3~4MB 짜리
+ * 응답이 필요해서, 토스 거래대금 상위 100종목만 담아 둔다. `universe` 가 그 수다.
+ *
+ * 주가를 못 받은 종목은 지표가 비어 있고 이름만 나온다 — 목록에서 빼면 "그 회사가
+ * 동종업계에 없다"로 잘못 읽힌다.
+ */
+export type UsPeerRow = {
+  ticker: string
+  name: string
+  price: string | null
+  market_cap: string | null
+  fiscal_year: number | null
+  per: string | null
+  pbr: string | null
+  roe: string | null
+  revenue_growth: string | null
+}
+
+export type UsPeers = {
+  ticker: string
+  sic: string | null
+  /** SEC 가 함께 주는 업종 이름. 국내(DART)는 코드만 있어 이게 없다. */
+  sic_description: string | null
+  universe: number
+  rows: UsPeerRow[]
+}
+
+export function fetchUsPeers(ticker: string, limit = 10) {
+  return get<UsPeers>(`/api/us/${encodeURIComponent(ticker)}/peers?limit=${limit}`)
+}

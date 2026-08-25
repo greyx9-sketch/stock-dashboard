@@ -19,7 +19,7 @@ from app.clients.sec import SecClient, SecError, UsFiling
 from app.clients.toss import TossClient, TossError
 from app.models.us_company import SecFinancial
 from app.models.us_quarterly import SecQuarterly
-from app.services import sec_companies, sec_financials, sec_quarterly
+from app.services import sec_companies, sec_financials, sec_quarterly, us_universe
 from app.services import valuation as valuation_service
 from app.services.price_poller import poller
 
@@ -160,6 +160,17 @@ class UsListItem(BaseModel):
     trading_volume: int
     trading_amount: int = Field(description="거래대금 (원 환산)")
     currency: str
+
+
+async def top_us_symbols(count: int) -> list[str]:
+    """거래대금 상위 티커만. 야간 유니버스 적재가 쓴다.
+
+    목록 엔드포인트와 달리 이름·시세를 붙이지 않는다 — 적재에는 티커만 있으면 되고,
+    종목 정보를 또 받으면 호출만 늘어난다.
+    """
+    async with TossClient() as toss:
+        data = await toss.get_rankings(market_country="US", count=count)
+    return [r["symbol"] for r in (data.get("rankings") or []) if r.get("symbol")]
 
 
 @router.get("/list", summary="미국 종목 목록 (거래대금 상위)")
@@ -652,4 +663,80 @@ async def get_us_quarterly(
         quarters=[
             _to_us_quarter(p, lookup.get((p["fiscal_year"] - 1, p["quarter"]))) for p in points
         ],
+    )
+
+
+# ====================================================================== 동종업계 비교
+
+
+class UsPeerRow(BaseModel):
+    ticker: str
+    name: str
+    price: Decimal | None
+    market_cap: Decimal | None
+    fiscal_year: int | None
+    per: Decimal | None
+    pbr: Decimal | None
+    roe: Decimal | None = Field(description="자기자본이익률 (%)")
+    revenue_growth: Decimal | None = Field(description="매출 증가율 (%) — 전년 대비")
+
+
+class UsPeersOut(BaseModel):
+    ticker: str
+    sic: str | None = Field(description="SEC 표준산업분류 코드")
+    sic_description: str | None = Field(description="업종 이름. SEC 가 함께 준다")
+    universe: int = Field(
+        description="지표를 아는 종목 수. 미국은 토스 거래대금 상위만 담아 둔다"
+    )
+    rows: list[UsPeerRow] = Field(description="자기 자신이 맨 앞, 나머지는 시가총액 순")
+
+
+@router.get("/{ticker}/peers", summary="미국 동종업계 비교")
+async def get_us_peers(
+    ticker: str = Path(description="티커 (예: NVDA)"),
+    limit: int = Query(10, ge=1, le=30),
+) -> UsPeersOut:
+    """같은 SIC 의 종목을 나란히 놓는다.
+
+    **미리 받아 둔 종목 안에서만 나온다.** 미국은 회사 하나의 재무를 받는 데 3~4MB 짜리
+    응답이 필요해서, 토스 거래대금 상위 100종목만 담아 둔다(`services/us_universe.py`).
+    화면이 그 사실을 밝힌다.
+
+    주가는 폴러가 들고 있는 것을 쓴다. 비교 대상을 등록하고 잠깐 기다렸다 답한다 —
+    끝내 못 받은 종목은 지표를 비운 채 이름만 나온다. 목록에서 통째로 빼면 "그 회사가
+    동종업계에 없다"로 잘못 읽힌다.
+    """
+    symbol = ticker.strip().upper()
+    company = sec_companies.get_company(symbol)
+    if company is None:
+        raise HTTPException(status_code=404, detail=f"'{symbol}' 을 SEC 목록에서 찾지 못했습니다.")
+
+    sic, sic_name = us_universe.industry_of(symbol)
+    group = us_universe.peers(symbol, limit=limit)
+    if not sic or not group:
+        return UsPeersOut(ticker=symbol, sic=sic, sic_description=sic_name, universe=0, rows=[])
+
+    wanted = [symbol, *group]
+    poller.register(wanted)
+    rows = valuation_service.us_screen_rows(wanted)
+    for _ in range(VALUATION_WAIT_TRIES):
+        if all(r.price is not None for r in rows):
+            break
+        await asyncio.sleep(VALUATION_WAIT_SEC)
+        rows = valuation_service.us_screen_rows(wanted)
+
+    # 자기 자신을 맨 앞에. 나머지는 시가총액 순이고, 시총을 모르는 줄은 뒤로 보낸다.
+    mine = [r for r in rows if r.ticker == symbol]
+    others = [r for r in rows if r.ticker != symbol]
+    known = sorted(
+        [r for r in others if r.market_cap is not None], key=lambda r: r.market_cap, reverse=True
+    )
+    unknown = [r for r in others if r.market_cap is None]
+
+    return UsPeersOut(
+        ticker=symbol,
+        sic=sic,
+        sic_description=sic_name,
+        universe=len(rows),
+        rows=[UsPeerRow(**vars(r)) for r in (mine + known + unknown)],
     )
