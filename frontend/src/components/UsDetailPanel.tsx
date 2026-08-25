@@ -12,18 +12,15 @@ import type {
   UsFinancialsResponse,
   UsListItem,
 } from '../lib/api'
-import { FinancialBars } from './FinancialBars'
 import { UsValuationBox } from './UsValuationBox'
-import type { FinancialRow } from './FinancialBars'
+import { UsFinancialPeriod } from './UsFinancialPeriod'
 import { TenKAnalysis } from './TenKAnalysis'
 import { StockNotes } from './StockNotes'
 import { WatchStar } from './WatchStar'
 import {
   changeColor,
-  formatPercent,
   formatRate,
   formatTimestamp,
-  formatUsd,
   formatUsdPrice,
 } from '../lib/format'
 import { usChangeRate, usLastPrice } from '../lib/usRate'
@@ -99,20 +96,6 @@ export function UsDetailPanel({ symbol, listItem, live, market }: Props) {
   const price = usLastPrice(listItem, live)
   const rate = usChangeRate(listItem, live)
 
-  const rows: FinancialRow[] = (financials?.years ?? []).map((year) => ({
-    label: String(year.fiscal_year),
-    sublabel: year.period_end,
-    revenue: year.revenue,
-    operating_income: year.operating_income,
-    net_income: year.net_income,
-    total_assets: year.total_assets,
-    operating_margin: year.operating_margin,
-    revenue_growth: year.revenue_growth,
-    roe: year.roe,
-    debt_ratio: year.debt_ratio,
-    source_url: year.source_url,
-  }))
-
   return (
     <div className="space-y-4">
       <div>
@@ -159,20 +142,13 @@ export function UsDetailPanel({ symbol, listItem, live, market }: Props) {
           그 근거인 추이로 내려간다. */}
       <UsValuationBox ticker={symbol} />
 
-      {rows.length > 0 ? (
-        <FinancialBars
-          rows={rows}
-          formatMoney={formatUsd}
-          formatPct={(v) => (v === null ? '—' : formatPercent(v))}
-          formatDelta={(v) => (v === null ? '—' : formatRate(v))}
-          badge="10-K"
-          footnote={`FY${rows[rows.length - 1].label} 연차보고서 기준 ·`}
-        />
-      ) : (
-        <div className="rounded-lg border border-neutral-800 bg-neutral-900/40 px-3 py-4 text-xs text-neutral-500">
-          {notes.financials ?? (loading ? '재무 데이터를 받는 중…' : '재무 데이터가 없습니다.')}
-        </div>
-      )}
+      {/* 연간/분기 전환은 이 안에 있다. 연간은 위에서 이미 받아 두었으므로 넘겨주고,
+          분기는 처음 누를 때만 따로 받는다. */}
+      <UsFinancialPeriod
+        ticker={symbol}
+        annual={financials}
+        fallback={notes.financials ?? (loading ? '재무 데이터를 받는 중…' : '재무 데이터가 없습니다.')}
+      />
 
       {/* 10-K 를 내는 종목에만 붙인다. ETF·DR 은 애초에 분석할 문서가 없다. */}
       {hasSecFilings && <TenKAnalysis ticker={symbol} />}

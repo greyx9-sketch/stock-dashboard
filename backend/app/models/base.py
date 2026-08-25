@@ -94,6 +94,7 @@ def init_db() -> None:
         quote,
         us_analysis,
         us_company,
+        us_quarterly,
         watchlist,
     )
 

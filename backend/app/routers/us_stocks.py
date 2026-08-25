@@ -18,7 +18,8 @@ from pydantic import BaseModel, Field
 from app.clients.sec import SecClient, SecError, UsFiling
 from app.clients.toss import TossClient, TossError
 from app.models.us_company import SecFinancial
-from app.services import sec_companies, sec_financials
+from app.models.us_quarterly import SecQuarterly
+from app.services import sec_companies, sec_financials, sec_quarterly
 from app.services import valuation as valuation_service
 from app.services.price_poller import poller
 
@@ -435,3 +436,220 @@ async def get_us_valuation(
             ),
         )
     return UsValuationOut(**vars(result))
+
+
+# ====================================================================== 분기 재무 (10-Q)
+
+
+class UsQuarterOut(BaseModel):
+    """한 분기의 재무. 국내와 같은 모양이다 — 화면이 같은 표를 쓴다."""
+
+    fiscal_year: int
+    quarter: int = Field(description="1~4")
+    label: str = Field(description="화면에 쓸 이름 (예: FY2026 1Q)")
+    period_end: str | None = Field(
+        description="분기 종료일. **회계연도가 회사마다 달라 반드시 함께 본다**"
+    )
+    derived: bool = Field(
+        description="4분기의 3개월 손익만 참 — 10-K 에서 3분기 누적을 뺀 계산값이다"
+    )
+
+    revenue: int | None
+    gross_profit: int | None
+    operating_income: int | None
+    net_income: int | None
+
+    revenue_cum: int | None
+    gross_profit_cum: int | None
+    operating_income_cum: int | None
+    net_income_cum: int | None
+
+    total_assets: int | None
+    total_liabilities: int | None
+    total_equity: int | None
+
+    operating_margin: Decimal | None = Field(description="영업이익률 (%) — 3개월 기준")
+    net_margin: Decimal | None = Field(description="순이익률 (%) — 3개월 기준")
+    operating_margin_cum: Decimal | None
+    net_margin_cum: Decimal | None
+
+    revenue_yoy: Decimal | None = Field(description="매출 증가율 (%) — 전년 동분기 대비")
+    operating_income_yoy: Decimal | None
+    revenue_cum_yoy: Decimal | None
+    operating_income_cum_yoy: Decimal | None
+
+
+class UsQuarterlyOut(BaseModel):
+    ticker: str
+    cik: str
+    name: str
+    currency: str
+    quarters: list[UsQuarterOut] = Field(description="오래된 분기부터")
+
+
+def _us_pct(numerator: int | None, denominator: int | None) -> Decimal | None:
+    if numerator is None or not denominator:
+        return None
+    return (Decimal(numerator) / Decimal(denominator) * 100).quantize(Decimal("0.01"))
+
+
+def _us_growth(current: int | None, previous: int | None) -> Decimal | None:
+    """전년 동분기 대비 증가율. 전년이 적자면 뜻을 잃으므로 내지 않는다."""
+    if current is None or previous is None or previous <= 0:
+        return None
+    return ((Decimal(current) - Decimal(previous)) / Decimal(previous) * 100).quantize(
+        Decimal("0.01")
+    )
+
+
+def _us_minus(total: int | None, part: int | None) -> int | None:
+    if total is None or part is None:
+        return None
+    return total - part
+
+
+def _us_quarter_dict(row: SecQuarterly) -> dict:
+    return {
+        "fiscal_year": row.fiscal_year,
+        "quarter": row.quarter,
+        "period_end": row.period_end or None,
+        "derived": False,
+        "revenue": row.revenue,
+        "gross_profit": row.gross_profit,
+        "operating_income": row.operating_income,
+        "net_income": row.net_income,
+        "revenue_cum": row.revenue_cum,
+        "gross_profit_cum": row.gross_profit_cum,
+        "operating_income_cum": row.operating_income_cum,
+        "net_income_cum": row.net_income_cum,
+        "total_assets": row.total_assets,
+        "total_liabilities": row.total_liabilities,
+        "total_equity": row.total_equity,
+    }
+
+
+def _us_q4(annual: SecFinancial, q3: dict | None) -> dict | None:
+    """4분기 한 행. 미국도 4분기를 따로 내지 않고 10-K 가 그 자리를 대신한다.
+
+    - **3개월 손익** = 연간 − 3분기 누적. 이것만 계산값이다.
+    - **누적 손익** = 연간 그 자체.
+    - **재무상태** = 10-K 의 기말 잔액. 계산이 아니라 원값이다.
+
+    3분기 누적이 없으면 만들지 않는다 — 연간값을 4분기인 척 보여주면 네 배 부풀려진다.
+    """
+    if q3 is None:
+        return None
+
+    three_month = {
+        "revenue": _us_minus(annual.revenue, q3["revenue_cum"]),
+        "gross_profit": _us_minus(annual.gross_profit, q3["gross_profit_cum"]),
+        "operating_income": _us_minus(annual.operating_income, q3["operating_income_cum"]),
+        "net_income": _us_minus(annual.net_income, q3["net_income_cum"]),
+    }
+    if all(v is None for v in three_month.values()):
+        return None
+
+    return {
+        "fiscal_year": annual.fiscal_year,
+        "quarter": 4,
+        "period_end": annual.period_end or None,
+        "derived": True,
+        **three_month,
+        "revenue_cum": annual.revenue,
+        "gross_profit_cum": annual.gross_profit,
+        "operating_income_cum": annual.operating_income,
+        "net_income_cum": annual.net_income,
+        "total_assets": annual.total_assets,
+        "total_liabilities": annual.total_liabilities,
+        "total_equity": annual.total_equity,
+    }
+
+
+def _to_us_quarter(point: dict, year_ago: dict | None) -> UsQuarterOut:
+    prev = year_ago or {}
+    return UsQuarterOut(
+        **{k: point[k] for k in (
+            "fiscal_year", "quarter", "period_end", "derived",
+            "revenue", "gross_profit", "operating_income", "net_income",
+            "revenue_cum", "gross_profit_cum", "operating_income_cum", "net_income_cum",
+            "total_assets", "total_liabilities", "total_equity",
+        )},
+        label=f"FY{point['fiscal_year']} {point['quarter']}Q",
+        operating_margin=_us_pct(point["operating_income"], point["revenue"]),
+        net_margin=_us_pct(point["net_income"], point["revenue"]),
+        operating_margin_cum=_us_pct(point["operating_income_cum"], point["revenue_cum"]),
+        net_margin_cum=_us_pct(point["net_income_cum"], point["revenue_cum"]),
+        # 전분기가 아니라 전년 동분기와 견준다 — 분기 실적은 계절을 심하게 탄다.
+        revenue_yoy=_us_growth(point["revenue"], prev.get("revenue")),
+        operating_income_yoy=_us_growth(point["operating_income"], prev.get("operating_income")),
+        revenue_cum_yoy=_us_growth(point["revenue_cum"], prev.get("revenue_cum")),
+        operating_income_cum_yoy=_us_growth(
+            point["operating_income_cum"], prev.get("operating_income_cum")
+        ),
+    )
+
+
+@router.get("/{ticker}/financials/quarterly", summary="미국 분기 재무 (10-Q)")
+async def get_us_quarterly(
+    ticker: str = Path(description="티커 (예: AAPL)"),
+    quarters: int = Query(12, ge=4, le=20, description="가져올 분기 수"),
+) -> UsQuarterlyOut:
+    """분기 재무를 **오래된 분기부터** 돌려준다. 국내와 같은 모양이다.
+
+    한 분기마다 **당분기 3개월**과 **회계연도 초부터 누적**을 함께 담는다. 둘 다 10-Q 에
+    실린 원값이다.
+
+    **4분기는 10-Q 가 없다.** 10-K 가 그 자리를 대신하므로 4분기의 3개월 손익만
+    `연간 − 3분기 누적`으로 계산해 채우고 `derived` 를 참으로 표시한다.
+
+    **회계연도가 회사마다 다르다.** 애플 FY2026 1분기는 2025년 12월에 끝나고,
+    마이크로소프트 FY2026 1분기는 2025년 9월에 끝난다. `period_end` 를 함께 본다.
+    """
+    symbol = ticker.strip().upper()
+    company = sec_companies.get_company(symbol)
+    if company is None:
+        raise HTTPException(status_code=404, detail=f"'{symbol}' 을 SEC 목록에서 찾지 못했습니다.")
+
+    try:
+        # 4분기를 만들려면 연간도 있어야 한다.
+        await sec_financials.ensure_financials(company.cik, years=4)
+        await sec_quarterly.ensure_quarters(company.cik)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"SEC 조회에 실패했습니다 — {exc}") from exc
+
+    rows = sec_quarterly.load(company.cik, limit=quarters)
+    if not rows:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"'{symbol}' 의 분기 재무를 찾지 못했습니다.\n"
+                "10-Q 를 내지 않는 종목(ETF·DR 등)일 수 있습니다."
+            ),
+        )
+
+    points = [_us_quarter_dict(r) for r in rows]
+
+    by_period = {(p["fiscal_year"], p["quarter"]): p for p in points}
+    for annual in sec_financials.load(company.cik, years=6):
+        if (annual.fiscal_year, 4) in by_period:
+            continue
+        made = _us_q4(annual, by_period.get((annual.fiscal_year, 3)))
+        if made is not None:
+            points.append(made)
+
+    points.sort(key=lambda p: (p["fiscal_year"], p["quarter"]))
+
+    # 전년 동분기는 **자르기 전** 목록에서 찾는다 — 화면에 안 보이는 분기도 비교
+    # 대상으로는 쓸 수 있어야 맨 앞 분기에도 증가율이 나온다.
+    lookup = {(p["fiscal_year"], p["quarter"]): p for p in points}
+    points = points[-quarters:]
+
+    return UsQuarterlyOut(
+        ticker=symbol,
+        cik=company.cik,
+        name=company.name,
+        currency="USD",
+        quarters=[
+            _to_us_quarter(p, lookup.get((p["fiscal_year"] - 1, p["quarter"]))) for p in points
+        ],
+    )

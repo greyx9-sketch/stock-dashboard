@@ -823,3 +823,56 @@ export type UsValuation = {
 export function fetchUsValuation(ticker: string) {
   return get<UsValuation>(`/api/us/${encodeURIComponent(ticker)}/valuation`)
 }
+
+/**
+ * 미국 분기 재무(10-Q). 국내와 같은 모양이다 — 3개월치와 누적을 함께 담는다.
+ *
+ * **`period_end` 를 반드시 함께 본다.** 회계연도가 회사마다 달라서, 애플 FY2026 1분기는
+ * 2025년 12월에 끝나고 마이크로소프트 FY2026 1분기는 2025년 9월에 끝난다.
+ */
+export type UsQuarterPoint = {
+  fiscal_year: number
+  quarter: number
+  label: string
+  period_end: string | null
+  /** 4분기의 3개월 손익만 참 — 10-Q 가 없어 10-K 에서 빼서 구한다. */
+  derived: boolean
+
+  revenue: number | null
+  gross_profit: number | null
+  operating_income: number | null
+  net_income: number | null
+
+  revenue_cum: number | null
+  gross_profit_cum: number | null
+  operating_income_cum: number | null
+  net_income_cum: number | null
+
+  total_assets: number | null
+  total_liabilities: number | null
+  total_equity: number | null
+
+  operating_margin: string | null
+  net_margin: string | null
+  operating_margin_cum: string | null
+  net_margin_cum: string | null
+
+  revenue_yoy: string | null
+  operating_income_yoy: string | null
+  revenue_cum_yoy: string | null
+  operating_income_cum_yoy: string | null
+}
+
+export type UsQuarterly = {
+  ticker: string
+  cik: string
+  name: string
+  currency: string
+  quarters: UsQuarterPoint[]
+}
+
+export function fetchUsQuarterly(ticker: string, quarters = 12) {
+  return get<UsQuarterly>(
+    `/api/us/${encodeURIComponent(ticker)}/financials/quarterly?quarters=${quarters}`,
+  )
+}
