@@ -42,6 +42,15 @@ UNIVERSE_JOB_ID = "screener-universe"
 UNIVERSE_HOUR = 14
 UNIVERSE_MINUTE = 0
 
+# 새 연차보고서 자동 분석 시각(KST). **돈이 나가는 유일한 예약 작업이다.**
+#
+# 이른 아침에 둔다 — 사용자가 낮에 직접 분석을 누를 때 하루 상한이 이미 차 있으면
+# 안 되는데, 자동 분석은 사람 몫 5건을 늘 남기므로(`services/auto_analysis.py`)
+# 먼저 돌아도 막지 않는다. 새 보고서가 없으면 아무 일도 하지 않는다.
+AUTO_ANALYSIS_JOB_ID = "auto-analysis"
+AUTO_ANALYSIS_HOUR = 7
+AUTO_ANALYSIS_MINUTE = 30
+
 # 확정 종가는 오후 1시 이후 공개된다. 정각에 붙으면 아직 안 올라와 있을 수 있어 여유를 둔다.
 RUN_HOUR = 13
 RUN_MINUTE = 20
@@ -131,8 +140,31 @@ class KrxScheduler:
             replace_existing=True,
         )
 
+        # 관심종목에 새 연차보고서가 올라왔는지 보고, 있으면 분석한다.
+        # **평일만 돈다** — 보고서는 영업일에 제출되고, 주말에 훑어 봐야 새 것이 없다.
+        self._scheduler.add_job(
+            self._auto_analysis,
+            CronTrigger(day_of_week="mon-fri", hour=AUTO_ANALYSIS_HOUR,
+                        minute=AUTO_ANALYSIS_MINUTE, timezone=KST),
+            id=AUTO_ANALYSIS_JOB_ID,
+            name="새 연차보고서 자동 분석",
+            misfire_grace_time=3600,
+            coalesce=True,
+            max_instances=1,
+            replace_existing=True,
+        )
+
         self._scheduler.start()
         logger.info("스케줄러 시작. 다음 정기 수집: %s", self.next_run_at)
+
+    async def _auto_analysis(self) -> None:
+        """새 연차보고서 자동 분석. **실패해도 서버를 흔들지 않는다.**"""
+        from app.services import auto_analysis
+
+        try:
+            await auto_analysis.run()
+        except Exception:
+            logger.exception("자동 분석 실패 — 다음 주기에 다시 시도한다")
 
     async def _load_universe(self) -> None:
         """유니버스 적재. **실패해도 서버를 흔들지 않는다** — 스크리너가 어제 자료로
