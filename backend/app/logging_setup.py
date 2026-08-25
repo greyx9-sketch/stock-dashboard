@@ -38,6 +38,16 @@ DATE_FORMAT = "%H:%M:%S"
 
 _HANDLER_NAME = "app-stdout"
 
+# **이 로거들은 INFO 에서 요청 URL 을 통째로 찍는다.**
+#
+# OpenDART 는 인증키를 쿼리 문자열로 받으므로(`?crtfc_key=...`) 그 줄이 로그에 남으면
+# **키가 journalctl 에 평문으로 쌓인다.** 실제로 확인했다 — 임시로 모든 로그를 켜고
+# 자동 분석을 돌려 보니 키가 그대로 찍혔다(2026-08-25).
+#
+# 지금은 우리가 `app` 만 설정하므로 이것들이 조용하지만, 나중에 누군가
+# `logging.basicConfig()` 를 부르면 그 순간 새기 시작한다. 그때를 대비해 못을 박는다.
+NOISY_LOGGERS = ("httpx", "httpcore", "anthropic", "urllib3")
+
 
 def configure_logging(level: int = logging.INFO, stream=None) -> None:
     """앱 로거를 표준 출력에 연결한다. 여러 번 불러도 안전하다.
@@ -67,3 +77,7 @@ def configure_logging(level: int = logging.INFO, stream=None) -> None:
     # 루트로 올려보내지 않는다 — 나중에 누군가 루트에 핸들러를 붙이면 같은 줄이 두 번
     # 찍힌다. 우리 로그는 우리 핸들러 하나로만 나간다.
     logger.propagate = False
+
+    # 요청 URL 을 찍는 로거들은 경고 이상만 내보낸다. 위 NOISY_LOGGERS 주석 참고.
+    for name in NOISY_LOGGERS:
+        logging.getLogger(name).setLevel(logging.WARNING)
