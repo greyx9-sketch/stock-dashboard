@@ -13,6 +13,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import PROJECT_ROOT, get_settings
+from app.logging_setup import configure_logging
 from app.middleware import ServerErrorRecorder
 from app.models.base import init_db
 from app.routers import (
@@ -52,6 +53,8 @@ async def lifespan(app: FastAPI):
     스케줄러는 확정 종가를 매일 자동으로 받아 온다. 기동 직후에는 꺼져 있던 동안 빠진
     날짜를 따라잡는다.
     """
+    # **로그 설정을 가장 먼저 한다.** 이 아래로 일어나는 일들이 기록에 남아야 한다.
+    configure_logging()
     init_db()
     await poller.start()
     scheduler.start()
