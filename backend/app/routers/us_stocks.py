@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from decimal import Decimal
 
@@ -22,6 +23,8 @@ from app.models.us_quarterly import SecQuarterly
 from app.services import sec_companies, sec_financials, sec_quarterly, us_universe
 from app.services import valuation as valuation_service
 from app.services.price_poller import poller
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/us", tags=["미국 주식"])
 
@@ -718,6 +721,15 @@ async def get_us_peers(
     if company is None:
         raise HTTPException(status_code=404, detail=f"'{symbol}' 을 SEC 목록에서 찾지 못했습니다.")
 
+    # **비교 대상 자신의 재무를 먼저 채운다.** 유니버스 적재는 거래대금 상위 100종목만
+    # 훑으므로 그 밖의 종목은 재무가 없고, 그러면 자기 자신이 표에서 빠진다. 실제로
+    # 그랬다(2026-08-25 서버 확인: KO 를 열었더니 자기는 없고 남만 둘 나왔다).
+    try:
+        await sec_financials.ensure_financials(company.cik, years=4)
+    except Exception:
+        # 비교는 곁다리다. 재무를 못 받아도 아래에서 빈 목록으로 답한다.
+        logger.warning("동종업계 비교용 재무를 받지 못했다 — %s", symbol, exc_info=True)
+
     sic, sic_name = us_universe.industry_of(symbol)
     group = us_universe.peers(symbol, limit=limit)
     if not sic or not group:
@@ -734,6 +746,10 @@ async def get_us_peers(
 
     # 자기 자신을 맨 앞에. 나머지는 시가총액 순이고, 시총을 모르는 줄은 뒤로 보낸다.
     mine = [r for r in rows if r.ticker == symbol]
+    if not mine:
+        # 자기 자신의 지표를 못 내면 비교가 성립하지 않는다. 남의 숫자만 늘어놓으면
+        # 무엇과 견주라는 것인지 알 수 없다.
+        return UsPeersOut(ticker=symbol, sic=sic, sic_description=sic_name, universe=0, rows=[])
     others = [r for r in rows if r.ticker != symbol]
     known = sorted(
         [r for r in others if r.market_cap is not None], key=lambda r: r.market_cap, reverse=True

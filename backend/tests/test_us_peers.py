@@ -217,3 +217,36 @@ def test_broken_submissions_do_not_raise():
     """공시 목록은 그대로 나와야 한다. 업종 저장은 곁다리다."""
     us_universe.remember_industry("0000000000", {})
     us_universe.remember_industry("0000000000", {"sic": None})
+
+
+def test_peers_are_empty_when_the_subject_has_no_metrics(monkeypatch):
+    """**회귀 방지(2026-08-25).** 자기 자신이 빠진 비교표는 쓸모가 없다.
+
+    서버에서 KO 를 열었더니 자기는 없고 이름 모를 두 회사만 나왔다 — 유니버스가
+    훑지 않은 종목이라 재무가 없었기 때문이다. 무엇과 견주라는 것인지 알 수 없다.
+
+    **SEC 를 부르지 않는다.** 재무를 채우는 부분은 여기서 확인할 것이 아니고,
+    테스트가 네트워크를 타면 결과가 그날 사정에 따라 달라진다.
+    """
+    import asyncio
+
+    from app.routers import us_stocks
+
+    async def _no_fetch(*args, **kwargs):
+        return 0
+
+    monkeypatch.setattr(us_stocks.sec_financials, "ensure_financials", _no_fetch)
+
+    # 비교 대상은 재무가 없고, 같은 업종의 다른 회사만 갖춰져 있다.
+    with get_session() as session:
+        session.add(
+            SecCompany(ticker="KO", cik="0000021344", name="COCA COLA CO",
+                       shares_outstanding=1_000, sic="2080", sic_description="Beverages")
+        )
+        session.commit()
+    _add("PEP", cik="0000077476", sic="2080", sic_name="Beverages")
+    if hasattr(sec_companies.get_company, "cache_clear"):
+        sec_companies.get_company.cache_clear()
+
+    got = asyncio.run(us_stocks.get_us_peers(ticker="KO", limit=5))
+    assert got.rows == []
