@@ -184,3 +184,36 @@ def test_companies_without_financials_are_left_out():
 
 def test_no_tickers_gives_nothing():
     assert valuation.us_screen_rows([]) == []
+
+
+# ---------------------------------------------------------------- 업종을 공짜로 넓히기
+
+
+def test_industry_is_remembered_when_filings_are_fetched():
+    """**유니버스가 훑지 않는 종목도 사용자가 열면 업종을 알게 된다.**
+
+    적재는 거래대금 상위 100종목만 본다. 그 밖의 종목(KO 가 그랬다)은 업종이 빈 채로
+    남는데, 공시 목록을 보려면 어차피 같은 응답을 받으므로 그때 챙겨 둔다.
+    """
+    _add("KO", cik="0000021344", sic=None, sic_name=None)
+    us_universe.remember_industry(
+        "0000021344", {"sic": "2080", "sicDescription": "Beverages"}
+    )
+    if hasattr(sec_companies.get_company, "cache_clear"):
+        sec_companies.get_company.cache_clear()
+    assert us_universe.industry_of("KO") == ("2080", "Beverages")
+
+
+def test_remembering_does_not_overwrite_what_we_know():
+    """이미 아는 업종을 덮지 않는다 — 적재가 넣은 값이 더 믿을 만하다."""
+    _add("NVDA", cik="0001045810", sic="3674")
+    us_universe.remember_industry("0001045810", {"sic": "9999", "sicDescription": "바뀜"})
+    if hasattr(sec_companies.get_company, "cache_clear"):
+        sec_companies.get_company.cache_clear()
+    assert us_universe.industry_of("NVDA")[0] == "3674"
+
+
+def test_broken_submissions_do_not_raise():
+    """공시 목록은 그대로 나와야 한다. 업종 저장은 곁다리다."""
+    us_universe.remember_industry("0000000000", {})
+    us_universe.remember_industry("0000000000", {"sic": None})

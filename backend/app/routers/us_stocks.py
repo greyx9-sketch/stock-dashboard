@@ -142,6 +142,13 @@ async def _submissions(cik: str) -> dict:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     _submissions_cache[cik] = (now, data)
+
+    # 같은 응답에 업종(SIC)이 들어 있다. **공짜로 넓히는 자리다.**
+    #
+    # 유니버스 적재는 거래대금 상위 100종목만 훑으므로, 그 밖의 종목은 업종을 모른 채로
+    # 남는다(KO 가 그랬다). 사용자가 종목을 열면 어차피 이 호출이 나가니 그때 채워 둔다.
+    # 이미 알고 있으면 아무 일도 하지 않는다.
+    us_universe.remember_industry(cik, data)
     return data
 
 

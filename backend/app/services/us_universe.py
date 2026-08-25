@@ -62,6 +62,18 @@ def _store_sic(cik: str, sic: str | None, description: str | None) -> bool:
         return result.rowcount > 0
 
 
+def remember_industry(cik: str, submissions: dict) -> None:
+    """제출 정보에서 업종을 챙겨 둔다. **이미 알고 있으면 아무 일도 하지 않는다.**
+
+    유니버스 적재가 훑지 않는 종목도 사용자가 열면 여기로 들어온다 — 공시 목록을
+    보려면 어차피 같은 응답을 받아야 하므로 새 호출이 없다.
+    """
+    try:
+        _store_sic(cik, submissions.get("sic"), submissions.get("sicDescription"))
+    except Exception:  # 곁다리다. 실패해도 공시 목록은 그대로 나와야 한다.
+        logger.warning("업종을 저장하지 못했다 — CIK %s", cik, exc_info=True)
+
+
 def industry_of(ticker: str) -> tuple[str | None, str | None]:
     """(SIC 코드, 업종 이름). 아직 모르면 (None, None)."""
     company = sec_companies.get_company(ticker)
