@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from fastapi import APIRouter, HTTPException, Path
+from fastapi import APIRouter, HTTPException, Path, Query
 from pydantic import BaseModel, Field
 
 from app.models.event import KINDS
@@ -59,6 +59,37 @@ def get_month(
         month=month,
         events=[EventOut(**vars(e)) for e in events_service.load(begin, end)],
     )
+
+
+class UpcomingOut(BaseModel):
+    """다가오는 일정 한 건. 화면 위쪽 띠가 쓴다."""
+
+    event: EventOut
+    days_away: int = Field(description="오늘로부터 며칠 뒤인가. 오늘이면 0")
+
+
+@router.get("/upcoming", summary="다가오는 일정")
+def get_upcoming(
+    days: int = Query(60, ge=1, le=365, description="오늘부터 며칠 앞까지 볼 것인가"),
+    limit: int = Query(4, ge=1, le=20),
+) -> list[UpcomingOut]:
+    """오늘 이후로 가장 가까운 일정들. **오늘 것도 넣는다** — 오늘이 금통위인데 목록에서
+    빠지면 그날 아침에 가장 필요한 정보가 사라진다.
+
+    `days_away` 를 함께 준다. 화면이 "D-2" 를 만들 때 날짜 계산을 다시 하지 않도록,
+    그리고 서버와 브라우저의 오늘이 어긋나지 않도록 여기서 낸다 — 시간대가 다르면
+    하루 어긋난다.
+    """
+    today = date.today()
+    end = date.fromordinal(today.toordinal() + days)
+    found = events_service.load(today, end)[:limit]
+    return [
+        UpcomingOut(
+            event=EventOut(**vars(item)),
+            days_away=(item.event_date - today).days,
+        )
+        for item in found
+    ]
 
 
 @router.post("", summary="일정 추가", status_code=201)

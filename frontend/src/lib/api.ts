@@ -720,6 +720,21 @@ export function fetchMonthEvents(year: number, month: number) {
   return get<MonthEvents>(`/api/events/${year}/${month}`)
 }
 
+/**
+ * 다가오는 일정 한 건.
+ *
+ * **`days_away` 를 서버가 세어 준다.** 브라우저에서 날짜를 빼면 시간대가 다를 때 하루
+ * 어긋난다 — 서버는 한국 시간으로 센다.
+ */
+export type Upcoming = {
+  event: CalendarEvent
+  days_away: number
+}
+
+export function fetchUpcomingEvents(days = 60, limit = 4) {
+  return get<Upcoming[]>(`/api/events/upcoming?days=${days}&limit=${limit}`)
+}
+
 export function createEvent(payload: {
   event_date: string
   kind: string

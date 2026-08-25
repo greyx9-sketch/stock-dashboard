@@ -5,6 +5,7 @@ import { Watchlist } from './pages/Watchlist'
 import { Calendar } from './pages/Calendar'
 import { Screener } from './pages/Screener'
 import { MacroStrip } from './components/MacroStrip'
+import { UpcomingEvents } from './components/UpcomingEvents'
 import { SystemBanner } from './components/SystemBanner'
 
 // 화면 전체의 껍데기. 어느 시장을 보고 있는지만 들고 있고, 나머지는 각 페이지가 맡는다.
@@ -35,6 +36,11 @@ export default function App() {
 
       {/* 매크로 띠는 시장 탭 바깥에 둔다. 탭을 바꿔도 다시 받지 않게 하려는 것이다. */}
       <MacroStrip />
+
+      {/* 다가오는 일정도 같은 이유로 탭 바깥이다 — 금통위가 이틀 뒤라는 사실은 국내를
+          보든 미국을 보든 똑같이 중요하다. 다만 일정 탭에서는 아래에 달력이 통째로
+          있으므로 겹쳐 두지 않는다. */}
+      {country !== 'CAL' && <UpcomingEvents />}
 
       <div className="mx-auto max-w-7xl px-4 py-6">
       <div className="mb-5 flex flex-wrap items-center gap-3">

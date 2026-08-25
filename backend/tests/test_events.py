@@ -200,3 +200,75 @@ def test_calendar_event_carries_where_it_came_from():
     """이 프로젝트는 출처 없는 숫자를 화면에 두지 않는다. 일정도 같다."""
     fields = CalendarEvent.__dataclass_fields__
     assert "source" in fields and "source_url" in fields
+
+
+# ---------------------------------------------------------------- 다가오는 일정 띠
+
+
+def _upcoming(**kwargs):
+    from app.routers.events import get_upcoming
+
+    return get_upcoming(**{"days": 60, "limit": 4, **kwargs})
+
+
+def test_upcoming_counts_the_days_on_the_server():
+    """**날짜 계산을 서버가 한다.**
+
+    브라우저에서 빼면 시간대가 다를 때 하루 어긋난다 — 한국 새벽에는 서버(UTC)가 아직
+    어제라, 같은 일정이 D-2 로도 D-3 으로도 보인다.
+    """
+    from datetime import date, timedelta
+
+    target = date.today() + timedelta(days=3)
+    events_service.add(
+        event_date=target, kind="실적", title="사흘 뒤 실적", symbol=None, memo=None
+    )
+    found = {u.event.title: u.days_away for u in _upcoming(limit=20)}
+    assert found["사흘 뒤 실적"] == 3
+
+
+def test_today_is_included():
+    """**오늘이 금통위인데 빠지면** 그날 아침에 가장 필요한 정보가 사라진다."""
+    from datetime import date
+
+    events_service.add(
+        event_date=date.today(), kind="기타", title="오늘 일정", symbol=None, memo=None
+    )
+    found = {u.event.title: u.days_away for u in _upcoming(limit=20)}
+    assert found["오늘 일정"] == 0
+
+
+def test_past_events_are_left_out():
+    """지난 일정은 '다가오는' 것이 아니다."""
+    from datetime import date, timedelta
+
+    events_service.add(
+        event_date=date.today() - timedelta(days=1), kind="기타", title="어제 일정",
+        symbol=None, memo=None,
+    )
+    assert "어제 일정" not in {u.event.title for u in _upcoming(limit=20)}
+
+
+def test_upcoming_is_limited_and_sorted():
+    """가까운 것부터 몇 건만. 띠 한 줄에 들어가야 한다."""
+    from datetime import date, timedelta
+
+    for offset in (9, 5, 7):
+        events_service.add(
+            event_date=date.today() + timedelta(days=offset), kind="기타",
+            title=f"{offset}일 뒤", symbol=None, memo=None,
+        )
+    got = _upcoming(days=10, limit=2)
+    assert len(got) == 2
+    assert [u.days_away for u in got] == sorted(u.days_away for u in got)
+
+
+def test_far_future_is_cut_off():
+    """1년 뒤 FOMC 가 '다가오는 일정'에 뜨면 띠가 뜻을 잃는다."""
+    from datetime import date, timedelta
+
+    events_service.add(
+        event_date=date.today() + timedelta(days=200), kind="기타", title="먼 일정",
+        symbol=None, memo=None,
+    )
+    assert "먼 일정" not in {u.event.title for u in _upcoming(days=30, limit=20)}
