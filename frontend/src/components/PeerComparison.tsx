@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { fetchPeers, type ScreenResult } from '../lib/api'
 import { MetricTable } from './MetricTable'
+import { Card } from './ui/Card'
 
 // 동종업계 비교. 기획서 5.4 — "같은 업종 종목의 밸류에이션·성장률 나열".
 //
@@ -78,14 +79,12 @@ export function PeerComparison({ symbol }: Props) {
 
 function Shell({ code, children }: { code?: string | null; children: React.ReactNode }) {
   return (
-    <div className="rounded-lg border border-neutral-800 bg-neutral-900/40">
-      <div className="border-b border-neutral-800 px-3 py-2 text-xs text-neutral-400">
-        동종업계 비교
-        <span className="ml-1 text-neutral-600">
-          {code ? `표준산업분류 ${code}` : '같은 업종 종목의 지표'}
-        </span>
-      </div>
+    <Card
+      title="동종업계 비교"
+      hint={code ? `표준산업분류 ${code}` : '같은 업종 종목의 지표'}
+      bodyClassName=""
+    >
       {children}
-    </div>
+    </Card>
   )
 }

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { createNote, deleteNote, fetchNotes, updateNote } from '../lib/api'
 import type { Note } from '../lib/api'
+import { Card } from './ui/Card'
 
 // 종목 메모. 국내·미국 상세 양쪽에 붙는다.
 //
@@ -72,13 +73,12 @@ export function StockNotes({ symbol }: Props) {
   const shown = expanded ? notes : notes.slice(0, RECENT)
 
   return (
-    <div className="rounded-lg border border-neutral-800 bg-neutral-900/40">
-      <div className="flex items-baseline justify-between border-b border-neutral-800 px-3 py-2 text-xs text-neutral-400">
-        <span>
-          메모 <span className="text-neutral-600">이 종목에 대한 내 기록</span>
-        </span>
-        {notes.length > 0 && <span className="tabular text-neutral-600">{notes.length}건</span>}
-      </div>
+    <Card
+      title="메모"
+      hint="이 종목에 대한 내 기록"
+      meta={notes.length > 0 ? <span className="tabular">{notes.length}건</span> : undefined}
+      bodyClassName=""
+    >
 
       <div className="space-y-3 px-3 py-3">
         <div className="space-y-1.5">
@@ -135,7 +135,7 @@ export function StockNotes({ symbol }: Props) {
           </button>
         )}
       </div>
-    </div>
+    </Card>
   )
 }
 

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { fetchKrAnalysis, runKrAnalysis } from '../lib/api'
 import type { KrAnalysis } from '../lib/api'
+import { Card } from './ui/Card'
 
 // 국내 사업보고서 서술 분석 블록. 미국 쪽 TenKAnalysis 와 짝이다.
 //
@@ -65,18 +66,16 @@ export function ReportAnalysis({ symbol }: Props) {
   }
 
   return (
-    <div className="rounded-lg border border-neutral-800 bg-neutral-900/40">
-      <div className="flex items-center justify-between gap-3 border-b border-neutral-800 px-3 py-2">
-        <div className="text-xs text-neutral-400">
-          사업보고서 분석{' '}
-          <span className="text-neutral-600">사업 · 위험 · 경영진단</span>
-        </div>
-        {analysis?.status === 'ok' && analysis.fiscal_year && (
-          <span className="tabular shrink-0 text-[11px] text-neutral-600">
-            {analysis.fiscal_year}년
-          </span>
-        )}
-      </div>
+    <Card
+      title="사업보고서 분석"
+      hint="사업 · 위험 · 경영진단"
+      bodyClassName=""
+      meta={
+        analysis?.status === 'ok' && analysis.fiscal_year ? (
+          <span className="tabular">{analysis.fiscal_year}년</span>
+        ) : undefined
+      }
+    >
 
       <div className="px-3 py-3">
         {loading && <p className="text-xs text-neutral-500">불러오는 중…</p>}
@@ -142,7 +141,7 @@ export function ReportAnalysis({ symbol }: Props) {
           <AnalysisBody analysis={analysis} />
         )}
       </div>
-    </div>
+    </Card>
   )
 }
 

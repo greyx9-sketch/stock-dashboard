@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import type { PricePoint } from '../lib/api'
 import { formatShortDate, formatWon, formatRate, changeColor } from '../lib/format'
+import { Card } from './ui/Card'
 
 // 차트 라이브러리를 쓰지 않고 SVG 로 직접 그린다.
 // 지금 필요한 것은 종가 선 하나뿐이라 라이브러리를 하나 더 붙일 이유가 없다.
@@ -66,7 +67,7 @@ export function PriceChart({ points }: Props) {
   }
 
   return (
-    <div className="rounded-lg border border-neutral-800 bg-neutral-900/40 p-3">
+    <Card bodyClassName="p-3">
       <div className="mb-2 flex items-baseline justify-between text-xs text-neutral-400">
         <span>
           {active ? formatShortDate(active.trade_date) : `${points.length} 거래일`}
@@ -129,6 +130,6 @@ export function PriceChart({ points }: Props) {
           {formatShortDate(points[points.length - 1].trade_date)}
         </text>
       </svg>
-    </div>
+    </Card>
   )
 }

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { fetchFlows } from '../lib/api'
 import type { FlowMetric, Flows, InvestorDay } from '../lib/api'
 import { changeColor, formatShortDate } from '../lib/format'
+import { Card } from './ui/Card'
 
 // 수급 동향 블록 (국내 전용).
 //
@@ -40,11 +41,7 @@ export function SupplyDemand({ symbol }: Props) {
   }, [symbol])
 
   return (
-    <div className="rounded-lg border border-neutral-800 bg-neutral-900/40">
-      <div className="border-b border-neutral-800 px-3 py-2 text-xs text-neutral-400">
-        수급 <span className="text-neutral-600">투자자별 · 공매도 · 신용 · 대차</span>
-      </div>
-
+    <Card title="수급" hint="투자자별 · 공매도 · 신용 · 대차" bodyClassName="">
       <div className="px-3 py-3">
         {loading && <p className="text-xs text-neutral-500">불러오는 중…</p>}
 
@@ -83,7 +80,7 @@ export function SupplyDemand({ symbol }: Props) {
           </div>
         )}
       </div>
-    </div>
+    </Card>
   )
 }
 

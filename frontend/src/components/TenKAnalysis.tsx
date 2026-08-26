@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { fetchUsAnalysis, runUsAnalysis } from '../lib/api'
 import type { UsAnalysis } from '../lib/api'
+import { Card } from './ui/Card'
 
 // 10-K 서술 분석 블록.
 //
@@ -69,18 +70,16 @@ export function TenKAnalysis({ ticker }: Props) {
   }
 
   return (
-    <div className="rounded-lg border border-neutral-800 bg-neutral-900/40">
-      <div className="flex items-center justify-between gap-3 border-b border-neutral-800 px-3 py-2">
-        <div className="text-xs text-neutral-400">
-          10-K 분석{' '}
-          <span className="text-neutral-600">사업 · 위험요인 · 경영진 논의</span>
-        </div>
-        {analysis?.status === 'ok' && (
-          <span className="tabular shrink-0 text-[11px] text-neutral-600">
-            FY{analysis.fiscal_year}
-          </span>
-        )}
-      </div>
+    <Card
+      title="10-K 분석"
+      hint="사업 · 위험요인 · 경영진 논의"
+      bodyClassName=""
+      meta={
+        analysis?.status === 'ok' ? (
+          <span className="tabular">FY{analysis.fiscal_year}</span>
+        ) : undefined
+      }
+    >
 
       <div className="px-3 py-3">
         {loading && <p className="text-xs text-neutral-500">불러오는 중…</p>}
@@ -146,7 +145,7 @@ export function TenKAnalysis({ ticker }: Props) {
           <AnalysisBody analysis={analysis} />
         )}
       </div>
-    </div>
+    </Card>
   )
 }
 
