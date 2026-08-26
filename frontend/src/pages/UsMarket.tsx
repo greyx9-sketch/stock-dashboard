@@ -5,6 +5,7 @@ import { useLivePrices } from '../lib/useLivePrices'
 import { UsTable } from '../components/UsTable'
 import { UsDetailPanel } from '../components/UsDetailPanel'
 import { MarketBadge } from '../components/MarketBadge'
+import { ErrorBox } from '../components/ui/Status'
 
 // 미국 시장 화면.
 //
@@ -109,9 +110,9 @@ export function UsMarket() {
       </div>
 
       {error && (
-        <div className="mb-4 rounded-lg border border-red-900/60 bg-red-950/30 p-4 text-sm text-red-300">
+        <ErrorBox tone="block" className="mb-4">
           {error}
-        </div>
+        </ErrorBox>
       )}
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_420px]">

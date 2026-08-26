@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
+import { Card } from './ui/Card'
+import { Segmented } from './ui/Segmented'
 
 // 연간 재무 추이를 그리는 부분. 국내(DART)와 미국(SEC)이 이 컴포넌트를 함께 쓴다.
 //
@@ -90,26 +92,22 @@ export function FinancialBars({
   const latest = rows[rows.length - 1]
 
   return (
-    <div className="rounded-lg border border-neutral-800 bg-neutral-900/40">
-      <div className="flex flex-wrap items-center gap-1 border-b border-neutral-800 px-3 py-2">
-        <span className="mr-1 text-xs text-neutral-400">{title}</span>
-        {extraControls}
-        {METRICS.map((option) => (
-          <button
-            key={option.key}
-            onClick={() => setMetric(option.key)}
-            className={`rounded px-2 py-0.5 text-xs transition-colors ${
-              metric === option.key
-                ? 'bg-neutral-100 text-neutral-900'
-                : 'text-neutral-400 hover:bg-neutral-800'
-            }`}
-          >
-            {option.label}
-          </button>
-        ))}
-        {badge && <span className="ml-auto text-xs text-neutral-600">{badge}</span>}
-      </div>
-
+    <Card
+      title={title}
+      meta={badge}
+      bodyClassName=""
+      actions={
+        <>
+          {extraControls}
+          <Segmented
+            label="재무 지표"
+            options={METRICS.map((m) => ({ value: m.key, label: m.label }))}
+            value={metric}
+            onChange={setMetric}
+          />
+        </>
+      }
+    >
       <div className="px-3 py-2">
         {rows.map((row) => {
           const value = row[metric]
@@ -197,7 +195,7 @@ export function FinancialBars({
         )}
       </dl>
 
-      <div className="border-t border-neutral-800 px-3 py-1.5 text-[11px] text-neutral-600">
+      <div className="border-t border-neutral-800 px-3 py-1.5 text-xs text-neutral-600">
         {footnote}{' '}
         <a
           href={latest.source_url}
@@ -208,7 +206,7 @@ export function FinancialBars({
           원문 보기
         </a>
       </div>
-    </div>
+    </Card>
   )
 }
 

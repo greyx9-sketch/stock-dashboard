@@ -3,6 +3,8 @@ import { fetchUsQuarterly, type UsFinancialsResponse, type UsQuarterly } from '.
 import { FinancialBars } from './FinancialBars'
 import type { FinancialRow } from './FinancialBars'
 import { formatPercent, formatRate, formatUsd } from '../lib/format'
+import { Card } from './ui/Card'
+import { Segmented } from './ui/Segmented'
 
 // 미국 재무의 연간/분기 전환. 국내(`FinancialSummary`)와 같은 짜임이다.
 //
@@ -148,73 +150,40 @@ export function UsFinancialPeriod({ ticker, annual, fallback }: Props) {
   )
 }
 
-function PeriodSwitch({
-  period,
-  onChange,
-}: {
-  period: Period
-  onChange: (next: Period) => void
-}) {
+function PeriodSwitch({ period, onChange }: { period: Period; onChange: (next: Period) => void }) {
   return (
-    <Toggle
+    <Segmented
+      grouped
+      className="mr-1"
+      label="재무 기간"
       options={[
-        ['annual', '연간'],
-        ['quarterly', '분기'],
-      ]}
+        { value: 'annual', label: '연간' },
+        { value: 'quarterly', label: '분기' },
+      ] as const}
       value={period}
-      onChange={(v) => onChange(v as Period)}
+      onChange={onChange}
     />
   )
 }
 
 function BasisSwitch({ basis, onChange }: { basis: Basis; onChange: (next: Basis) => void }) {
   return (
-    <Toggle
+    <Segmented
+      grouped
+      className="mr-1"
+      label="분기 집계 기준"
       title="3개월: 그 분기만 / 누적: 회계연도 초부터 그 분기까지"
       options={[
-        ['quarter', '3개월'],
-        ['cumulative', '누적'],
-      ]}
+        { value: 'quarter', label: '3개월' },
+        { value: 'cumulative', label: '누적' },
+      ] as const}
       value={basis}
-      onChange={(v) => onChange(v as Basis)}
+      onChange={onChange}
     />
   )
 }
 
-function Toggle({
-  options,
-  value,
-  onChange,
-  title,
-}: {
-  options: [string, string][]
-  value: string
-  onChange: (next: string) => void
-  title?: string
-}) {
-  return (
-    <span
-      className="mr-1 flex overflow-hidden rounded border border-neutral-800"
-      title={title}
-    >
-      {options.map(([key, label]) => (
-        <button
-          key={key}
-          onClick={() => onChange(key)}
-          className={`px-1.5 py-0.5 text-[11px] transition-colors ${
-            value === key
-              ? 'bg-neutral-700 text-neutral-100'
-              : 'text-neutral-500 hover:bg-neutral-800'
-          }`}
-        >
-          {label}
-        </button>
-      ))}
-    </span>
-  )
-}
-
-/** 데이터가 없을 때도 기간 전환은 살아 있어야 한다. */
+/** 데이터가 없을 때도 기간 전환은 살아 있어야 한다 — 분기가 없다고 연간까지 막히면 안 된다. */
 function Shell({
   switcher,
   children,
@@ -223,12 +192,8 @@ function Shell({
   children: React.ReactNode
 }) {
   return (
-    <div className="rounded-lg border border-neutral-800 bg-neutral-900/40">
-      <div className="flex flex-wrap items-center gap-1 border-b border-neutral-800 px-3 py-2">
-        <span className="mr-1 text-xs text-neutral-400">재무</span>
-        {switcher}
-      </div>
-      <div className="px-3 py-4 text-xs text-neutral-500">{children}</div>
-    </div>
+    <Card title="재무" actions={switcher} bodyClassName="px-3 py-4 text-xs text-neutral-500">
+      {children}
+    </Card>
   )
 }

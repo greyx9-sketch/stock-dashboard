@@ -3,6 +3,7 @@ import { fetchScreen, type ScreenFilters, type ScreenResult } from '../lib/api'
 import { MetricTable } from '../components/MetricTable'
 import { StockDetailPanel } from '../components/StockDetailPanel'
 import { useLivePrices } from '../lib/useLivePrices'
+import { ErrorBox } from '../components/ui/Status'
 
 // 스크리너. 기획서 5.4 — "PER 15배 이하 + ROE 10% 이상 같은 조건 필터".
 //
@@ -141,9 +142,9 @@ export function Screener() {
         </div>
 
         {error ? (
-          <div className="rounded border border-rose-900 bg-rose-950/40 px-3 py-2 text-xs text-rose-300">
+          <ErrorBox>
             {error}
-          </div>
+          </ErrorBox>
         ) : (
           <div className="rounded-lg border border-neutral-800 bg-neutral-900/40">
             <div className="border-b border-neutral-800 px-3 py-2 text-xs text-neutral-500">

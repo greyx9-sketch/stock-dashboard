@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react'
 import { fetchUsValuation, type UsValuation } from '../lib/api'
+import { Card } from './ui/Card'
+import { Metric } from './ui/Metric'
+import { Empty, ErrorBox, Loading } from './ui/Status'
 
 // 미국 밸류에이션. 국내(`ValuationBox`)와 계산은 같고 **밝혀야 할 것이 다르다.**
 //
@@ -43,16 +46,14 @@ export function UsValuationBox({ ticker }: Props) {
   }, [ticker])
 
   return (
-    <div className="rounded-lg border border-neutral-800 bg-neutral-900/40">
-      <div className="border-b border-neutral-800 px-3 py-2 text-xs text-neutral-400">
-        밸류에이션
-        <span className="ml-1 text-neutral-600">PER · PBR · 배당수익률</span>
-      </div>
-      <div className="px-3 py-2">
+    <Card title="밸류에이션" hint="PER · PBR · 배당수익률">
+      <>
         {loading && !data ? (
-          <p className="text-xs text-neutral-500">지표를 계산하는 중…</p>
-        ) : error || !data ? (
-          <p className="text-xs text-neutral-500">{error ?? '지표를 낼 수 없습니다.'}</p>
+          <Loading label="지표를 계산하는 중…" />
+        ) : error ? (
+          <ErrorBox>{error}</ErrorBox>
+        ) : !data ? (
+          <Empty title="지표를 낼 수 없습니다." />
         ) : (
           <>
             <dl className="grid grid-cols-3 gap-x-3 gap-y-1">
@@ -99,39 +100,7 @@ export function UsValuationBox({ ticker }: Props) {
             </div>
           </>
         )}
-      </div>
-    </div>
-  )
-}
-
-function Metric({
-  label,
-  value,
-  suffix,
-  sub,
-  note,
-}: {
-  label: string
-  value: string | null
-  suffix: string
-  sub?: string
-  note: string | null
-}) {
-  return (
-    <div>
-      <dt className="text-xs text-neutral-500">{label}</dt>
-      {value !== null ? (
-        <>
-          <dd className="tabular text-sm text-neutral-100">
-            {value}
-            <span className="ml-0.5 text-xs text-neutral-500">{suffix}</span>
-          </dd>
-          {sub && <dd className="tabular text-[11px] text-neutral-600">{sub}</dd>}
-        </>
-      ) : (
-        // 적자라서 없는 것과 자료를 못 받은 것은 다르다. 이유를 그대로 적는다.
-        <dd className="text-[11px] leading-tight text-neutral-500">{note ?? '—'}</dd>
-      )}
-    </div>
+      </>
+    </Card>
   )
 }

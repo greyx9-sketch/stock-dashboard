@@ -19,6 +19,7 @@ import {
   formatVolume,
   formatWon,
 } from '../lib/format'
+import { ErrorBox } from './ui/Status'
 
 type Props = {
   symbol: string
@@ -65,9 +66,9 @@ export function StockDetailPanel({ symbol, live, market }: Props) {
 
   if (error) {
     return (
-      <div className="rounded-lg border border-red-900/60 bg-red-950/30 p-4 text-sm text-red-300">
+      <ErrorBox tone="block">
         {error}
-      </div>
+      </ErrorBox>
     )
   }
 

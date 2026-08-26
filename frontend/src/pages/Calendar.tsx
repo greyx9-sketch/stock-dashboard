@@ -5,6 +5,7 @@ import {
   fetchMonthEvents,
   type CalendarEvent,
 } from '../lib/api'
+import { ErrorBox } from '../components/ui/Status'
 
 // 일정 캘린더. 기획서 5.3.
 //
@@ -154,9 +155,9 @@ export function Calendar() {
         </div>
 
         {error && (
-          <div className="mb-3 rounded border border-rose-900 bg-rose-950/40 px-3 py-2 text-xs text-rose-300">
+          <ErrorBox className="mb-3">
             {error}
-          </div>
+          </ErrorBox>
         )}
 
         <div className="grid grid-cols-7 gap-px overflow-hidden rounded-lg border border-neutral-800 bg-neutral-800">

@@ -13,6 +13,7 @@ import {
 import { MarketBadge } from '../components/MarketBadge'
 import { StockDetailPanel } from '../components/StockDetailPanel'
 import { UsDetailPanel } from '../components/UsDetailPanel'
+import { ErrorBox } from '../components/ui/Status'
 
 // 관심종목 탭. 기획서 5.1 의 관심종목 그리드다.
 //
@@ -107,9 +108,9 @@ export function Watchlist() {
       </form>
 
       {error && (
-        <div className="mb-4 rounded-lg border border-red-900/60 bg-red-950/30 p-4 text-sm text-red-300">
+        <ErrorBox tone="block" className="mb-4">
           {error}
-        </div>
+        </ErrorBox>
       )}
 
       {loaded && items.length === 0 ? (

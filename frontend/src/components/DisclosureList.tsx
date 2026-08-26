@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 import { fetchDisclosures } from '../lib/api'
 import type { DisclosureItem } from '../lib/api'
+import { Card } from './ui/Card'
+import { Segmented } from './ui/Segmented'
+import { Empty, ErrorBox, Loading } from './ui/Status'
 
 // 공시 목록.
 //
@@ -8,13 +11,17 @@ import type { DisclosureItem } from '../lib/api'
 // 정작 봐야 할 사업보고서·주요사항보고가 묻힌다(삼성전자는 최근 1년 반 공시 3,400건 중
 // 3,328건이 지분공시였다). 그래서 기본값을 "정기공시"로 둔다.
 
-const FILTERS: { key: string | null; label: string }[] = [
-  { key: 'A', label: '정기' },
-  { key: 'B', label: '주요사항' },
-  { key: 'I', label: '거래소' },
-  { key: 'D', label: '지분' },
-  { key: null, label: '전체' },
-]
+// '전체'는 API 에 reportType 을 안 보내는 것이라 값이 null 이다. 다만 화면 상태로는
+// 다른 선택지와 같은 자격이어야 해서 'ALL' 이라는 이름을 준 뒤 호출 직전에 null 로 바꾼다.
+const FILTERS = [
+  { value: 'A', label: '정기' },
+  { value: 'B', label: '주요사항' },
+  { value: 'I', label: '거래소' },
+  { value: 'D', label: '지분' },
+  { value: 'ALL', label: '전체' },
+] as const
+
+type FilterKey = (typeof FILTERS)[number]['value']
 
 const PERIOD_DAYS = 730
 const COUNT = 20
@@ -24,7 +31,7 @@ type Props = {
 }
 
 export function DisclosureList({ symbol }: Props) {
-  const [reportType, setReportType] = useState<string | null>('A')
+  const [reportType, setReportType] = useState<FilterKey>('A')
   const [items, setItems] = useState<DisclosureItem[]>([])
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -34,7 +41,11 @@ export function DisclosureList({ symbol }: Props) {
     setLoading(true)
     setError(null)
 
-    fetchDisclosures(symbol, { days: PERIOD_DAYS, count: COUNT, reportType })
+    fetchDisclosures(symbol, {
+      days: PERIOD_DAYS,
+      count: COUNT,
+      reportType: reportType === 'ALL' ? null : reportType,
+    })
       .then((result) => {
         if (!cancelled) setItems(result.disclosures)
       })
@@ -54,29 +65,23 @@ export function DisclosureList({ symbol }: Props) {
   }, [symbol, reportType])
 
   return (
-    <div className="rounded-lg border border-neutral-800 bg-neutral-900/40">
-      <div className="flex flex-wrap items-center gap-1 border-b border-neutral-800 px-3 py-2">
-        <span className="mr-1 text-xs text-neutral-400">공시</span>
-        {FILTERS.map((filter) => (
-          <button
-            key={filter.label}
-            onClick={() => setReportType(filter.key)}
-            className={`rounded px-2 py-0.5 text-xs transition-colors ${
-              reportType === filter.key
-                ? 'bg-neutral-100 text-neutral-900'
-                : 'text-neutral-400 hover:bg-neutral-800'
-            }`}
-          >
-            {filter.label}
-          </button>
-        ))}
-        {loading && <span className="ml-auto text-xs text-neutral-600">불러오는 중…</span>}
-      </div>
-
+    <Card
+      title="공시"
+      bodyClassName=""
+      meta={loading ? <Loading label="불러오는 중…" /> : undefined}
+      actions={
+        <Segmented
+          label="공시 유형"
+          options={FILTERS}
+          value={reportType}
+          onChange={setReportType}
+        />
+      }
+    >
       {error ? (
-        <p className="px-3 py-4 text-xs text-red-300">{error}</p>
+        <ErrorBox className="px-3 py-4">{error}</ErrorBox>
       ) : items.length === 0 && !loading ? (
-        <p className="px-3 py-4 text-xs text-neutral-500">최근 2년간 해당 공시가 없습니다.</p>
+        <Empty className="px-3 py-4" title="최근 2년간 해당 공시가 없습니다." />
       ) : (
         <ul className="max-h-72 divide-y divide-neutral-800/70 overflow-y-auto">
           {items.map((item) => (
@@ -105,6 +110,6 @@ export function DisclosureList({ symbol }: Props) {
           ))}
         </ul>
       )}
-    </div>
+    </Card>
   )
 }

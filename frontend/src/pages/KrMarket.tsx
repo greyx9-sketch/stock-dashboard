@@ -6,19 +6,25 @@ import { formatTimestamp } from '../lib/format'
 import { StockTable } from '../components/StockTable'
 import { StockDetailPanel } from '../components/StockDetailPanel'
 import { MarketBadge } from '../components/MarketBadge'
+import { Segmented } from '../components/ui/Segmented'
+import { ErrorBox, Loading } from '../components/ui/Status'
 
-const SORT_OPTIONS: { key: SortKey; label: string }[] = [
-  { key: 'market_cap', label: '시가총액' },
-  { key: 'trade_value', label: '거래대금' },
-  { key: 'volume', label: '거래량' },
-  { key: 'change_rate', label: '등락률' },
-]
+const SORT_OPTIONS = [
+  { value: 'market_cap', label: '시가총액' },
+  { value: 'trade_value', label: '거래대금' },
+  { value: 'volume', label: '거래량' },
+  { value: 'change_rate', label: '등락률' },
+] as const satisfies readonly { value: SortKey; label: string }[]
 
-const MARKET_OPTIONS: { key: MarketFilter | null; label: string }[] = [
-  { key: null, label: '전체' },
-  { key: 'KOSPI', label: 'KOSPI' },
-  { key: 'KOSDAQ', label: 'KOSDAQ' },
-]
+// '전체'는 시장 필터를 안 거는 것이라 API 로는 null 이다. 화면 상태로는 다른 선택지와
+// 같은 자격이어야 해서 'ALL' 이라는 이름을 주고 호출 직전에 null 로 바꾼다.
+const MARKET_OPTIONS = [
+  { value: 'ALL', label: '전체' },
+  { value: 'KOSPI', label: 'KOSPI' },
+  { value: 'KOSDAQ', label: 'KOSDAQ' },
+] as const satisfies readonly { value: MarketFilter | 'ALL'; label: string }[]
+
+type MarketChoice = (typeof MARKET_OPTIONS)[number]['value']
 
 const LIST_LIMIT = 50
 
@@ -50,7 +56,7 @@ export function KrMarket() {
   const [status, setStatus] = useState<DataStatus | null>(null)
   const [stocks, setStocks] = useState<Quote[]>([])
   const [sort, setSort] = useState<SortKey>('market_cap')
-  const [market, setMarket] = useState<MarketFilter | null>(null)
+  const [market, setMarket] = useState<MarketChoice>('ALL')
   const [keyword, setKeyword] = useState('')
   const [selected, setSelected] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -90,7 +96,7 @@ export function KrMarket() {
     const timer = setTimeout(() => {
       const request = trimmed
         ? searchStocks(trimmed)
-        : fetchStocks({ sort, market, limit: LIST_LIMIT })
+        : fetchStocks({ sort, market: market === 'ALL' ? null : market, limit: LIST_LIMIT })
 
       request
         .then((result) => {
@@ -154,47 +160,30 @@ export function KrMarket() {
 
         {keyword.trim() === '' && (
           <>
-            <div className="flex gap-1">
-              {SORT_OPTIONS.map((option) => (
-                <button
-                  key={option.key}
-                  onClick={() => setSort(option.key)}
-                  className={`rounded-md px-2.5 py-1.5 text-sm transition-colors ${
-                    sort === option.key
-                      ? 'bg-neutral-100 text-neutral-900'
-                      : 'bg-neutral-900 text-neutral-300 hover:bg-neutral-800'
-                  }`}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-
-            <div className="flex gap-1">
-              {MARKET_OPTIONS.map((option) => (
-                <button
-                  key={option.label}
-                  onClick={() => setMarket(option.key)}
-                  className={`rounded-md px-2.5 py-1.5 text-sm transition-colors ${
-                    market === option.key
-                      ? 'bg-neutral-100 text-neutral-900'
-                      : 'bg-neutral-900 text-neutral-300 hover:bg-neutral-800'
-                  }`}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
+            <Segmented
+              size="md"
+              label="정렬 기준"
+              options={SORT_OPTIONS}
+              value={sort}
+              onChange={setSort}
+            />
+            <Segmented
+              size="md"
+              label="시장"
+              options={MARKET_OPTIONS}
+              value={market}
+              onChange={setMarket}
+            />
           </>
         )}
 
-        {loading && <span className="text-xs text-neutral-500">불러오는 중…</span>}
+        {loading && <Loading label="불러오는 중…" />}
       </div>
 
       {error && (
-        <div className="mb-4 rounded-lg border border-red-900/60 bg-red-950/30 p-4 text-sm text-red-300">
+        <ErrorBox tone="block" className="mb-4">
           {error}
-        </div>
+        </ErrorBox>
       )}
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_420px]">

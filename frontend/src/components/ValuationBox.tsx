@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 import { fetchValuation, type Valuation } from '../lib/api'
 import { formatBigWon } from '../lib/format'
+import { Card } from './ui/Card'
+import { Metric } from './ui/Metric'
+import { Empty, ErrorBox, Loading } from './ui/Status'
 
 // 밸류에이션 — PER · PBR · 배당수익률. 기획서 5.2.
 //
@@ -50,15 +53,23 @@ export function ValuationBox({ symbol }: Props) {
   if (loading && !data) {
     return (
       <Shell>
-        <p className="text-xs text-neutral-500">지표를 계산하는 중…</p>
+        <Loading label="지표를 계산하는 중…" />
       </Shell>
     )
   }
 
-  if (error || !data) {
+  if (error) {
     return (
       <Shell>
-        <p className="text-xs text-neutral-500">{error ?? '지표를 낼 수 없습니다.'}</p>
+        <ErrorBox>{error}</ErrorBox>
+      </Shell>
+    )
+  }
+
+  if (!data) {
+    return (
+      <Shell>
+        <Empty title="지표를 낼 수 없습니다." />
       </Shell>
     )
   }
@@ -93,7 +104,7 @@ export function ValuationBox({ symbol }: Props) {
         />
       </dl>
 
-      <div className="mt-2 border-t border-neutral-800 pt-2 text-[11px] leading-relaxed text-neutral-600">
+      <div className="mt-2 border-t border-neutral-800 pt-2 text-xs leading-relaxed text-neutral-600">
         시가총액 {formatBigWon(data.market_cap)}원 ={' '}
         <span className="tabular">{data.price.toLocaleString()}원</span>
         <span className="text-neutral-500"> ({data.price_label})</span> ×{' '}
@@ -117,44 +128,8 @@ export function ValuationBox({ symbol }: Props) {
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="rounded-lg border border-neutral-800 bg-neutral-900/40">
-      <div className="border-b border-neutral-800 px-3 py-2 text-xs text-neutral-400">
-        밸류에이션
-        <span className="ml-1 text-neutral-600">PER · PBR · 배당수익률</span>
-      </div>
-      <div className="px-3 py-2">{children}</div>
-    </div>
-  )
-}
-
-function Metric({
-  label,
-  value,
-  suffix,
-  sub,
-  note,
-}: {
-  label: string
-  value: string | null
-  suffix: string
-  sub?: string
-  note: string | null
-}) {
-  return (
-    <div>
-      <dt className="text-xs text-neutral-500">{label}</dt>
-      {value !== null ? (
-        <>
-          <dd className="tabular text-sm text-neutral-100">
-            {value}
-            <span className="ml-0.5 text-xs text-neutral-500">{suffix}</span>
-          </dd>
-          {sub && <dd className="tabular text-[11px] text-neutral-600">{sub}</dd>}
-        </>
-      ) : (
-        // 못 낸 이유를 그대로 적는다. "—" 하나로는 적자인지 자료가 없는지 알 수 없다.
-        <dd className="text-[11px] leading-tight text-neutral-500">{note ?? '—'}</dd>
-      )}
-    </div>
+    <Card title="밸류에이션" hint="PER · PBR · 배당수익률">
+      {children}
+    </Card>
   )
 }

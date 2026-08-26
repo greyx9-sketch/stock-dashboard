@@ -4,6 +4,8 @@ import type { FinancialsResponse, QuarterlyResponse } from '../lib/api'
 import { FinancialBars } from './FinancialBars'
 import type { FinancialRow } from './FinancialBars'
 import { formatBigWon, formatPercent, formatRate } from '../lib/format'
+import { Card } from './ui/Card'
+import { Segmented } from './ui/Segmented'
 
 // 국내 재무(OpenDART). 받아 온 응답을 공통 표시 형태로 옮기는 일만 한다.
 //
@@ -181,69 +183,37 @@ export function FinancialSummary({ symbol }: Props) {
 }
 
 /** 연간 ↔ 분기. */
-function PeriodSwitch({
-  period,
-  onChange,
-}: {
-  period: Period
-  onChange: (next: Period) => void
-}) {
+function PeriodSwitch({ period, onChange }: { period: Period; onChange: (next: Period) => void }) {
   return (
-    <span className="mr-1 flex overflow-hidden rounded border border-neutral-800">
-      {(
-        [
-          ['annual', '연간'],
-          ['quarterly', '분기'],
-        ] as const
-      ).map(([key, label]) => (
-        <button
-          key={key}
-          onClick={() => onChange(key)}
-          className={`px-1.5 py-0.5 text-[11px] transition-colors ${
-            period === key
-              ? 'bg-neutral-700 text-neutral-100'
-              : 'text-neutral-500 hover:bg-neutral-800'
-          }`}
-        >
-          {label}
-        </button>
-      ))}
-    </span>
+    <Segmented
+      grouped
+      className="mr-1"
+      label="재무 기간"
+      options={[
+        { value: 'annual', label: '연간' },
+        { value: 'quarterly', label: '분기' },
+      ] as const}
+      value={period}
+      onChange={onChange}
+    />
   )
 }
 
 /** 3개월 ↔ 누적. 분기를 볼 때만 나온다. */
-function BasisSwitch({
-  basis,
-  onChange,
-}: {
-  basis: Basis
-  onChange: (next: Basis) => void
-}) {
+function BasisSwitch({ basis, onChange }: { basis: Basis; onChange: (next: Basis) => void }) {
   return (
-    <span
-      className="mr-1 flex overflow-hidden rounded border border-neutral-800"
+    <Segmented
+      grouped
+      className="mr-1"
+      label="분기 집계 기준"
       title="3개월: 그 분기만 / 누적: 연초부터 그 분기까지"
-    >
-      {(
-        [
-          ['quarter', '3개월'],
-          ['cumulative', '누적'],
-        ] as const
-      ).map(([key, label]) => (
-        <button
-          key={key}
-          onClick={() => onChange(key)}
-          className={`px-1.5 py-0.5 text-[11px] transition-colors ${
-            basis === key
-              ? 'bg-neutral-700 text-neutral-100'
-              : 'text-neutral-500 hover:bg-neutral-800'
-          }`}
-        >
-          {label}
-        </button>
-      ))}
-    </span>
+      options={[
+        { value: 'quarter', label: '3개월' },
+        { value: 'cumulative', label: '누적' },
+      ] as const}
+      value={basis}
+      onChange={onChange}
+    />
   )
 }
 
@@ -256,12 +226,8 @@ function Shell({
   children: React.ReactNode
 }) {
   return (
-    <div className="rounded-lg border border-neutral-800 bg-neutral-900/40">
-      <div className="flex flex-wrap items-center gap-1 border-b border-neutral-800 px-3 py-2">
-        <span className="mr-1 text-xs text-neutral-400">재무</span>
-        {switcher}
-      </div>
-      <div className="px-3 py-4 text-xs text-neutral-500">{children}</div>
-    </div>
+    <Card title="재무" actions={switcher} bodyClassName="px-3 py-4 text-xs text-neutral-500">
+      {children}
+    </Card>
   )
 }
