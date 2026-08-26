@@ -1,5 +1,6 @@
 import type { ScreenRow } from '../lib/api'
 import { formatBigWon } from '../lib/format'
+import { DataTable, type Column } from './ui/DataTable'
 
 // 지표 표. 스크리너와 동종업계 비교가 **같은 표**를 쓴다.
 //
@@ -22,80 +23,70 @@ type Props = {
   onSort?: (key: string) => void
 }
 
-const COLUMNS: { key: string; label: string; sortable: boolean }[] = [
-  { key: 'name', label: '종목', sortable: false },
-  { key: 'per', label: 'PER', sortable: true },
-  { key: 'pbr', label: 'PBR', sortable: true },
-  { key: 'roe', label: 'ROE', sortable: true },
-  { key: 'dividend_yield', label: '배당', sortable: true },
-  { key: 'revenue_growth', label: '매출증가', sortable: true },
-  { key: 'market_cap', label: '시총', sortable: true },
-]
-
 function cell(value: string | null, suffix = ''): string {
   return value === null ? '—' : `${value}${suffix}`
 }
 
 export function MetricTable({ rows, highlight, onPick, sort, desc, onSort }: Props) {
-  if (rows.length === 0) {
-    return <p className="px-3 py-4 text-xs text-neutral-500">보여줄 종목이 없습니다.</p>
-  }
+  const columns: Column<ScreenRow>[] = [
+    {
+      key: 'name',
+      header: '종목',
+      render: (row) => (
+        <>
+          <span className="text-neutral-200">{row.name}</span>
+          <span className="tabular ml-1 text-neutral-600">{row.symbol}</span>
+          {row.symbol === highlight && (
+            <span className="ml-1 rounded bg-neutral-700 px-1 text-xs text-neutral-200">
+              이 종목
+            </span>
+          )}
+        </>
+      ),
+    },
+    num('per', 'PER', (row) => cell(row.per), 'text-neutral-200'),
+    num('pbr', 'PBR', (row) => cell(row.pbr), 'text-neutral-200'),
+    num('roe', 'ROE', (row) => cell(row.roe, '%')),
+    num('dividend_yield', '배당', (row) => cell(row.dividend_yield, '%')),
+    num('revenue_growth', '매출증가', (row) => cell(row.revenue_growth, '%')),
+    num('market_cap', '시총', (row) => formatBigWon(row.market_cap), 'text-neutral-400'),
+  ]
 
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-xs">
-        <thead>
-          <tr className="border-b border-neutral-800 text-neutral-500">
-            {COLUMNS.map((col) => (
-              <th
-                key={col.key}
-                onClick={col.sortable && onSort ? () => onSort(col.key) : undefined}
-                className={`px-2 py-1.5 font-normal ${
-                  col.key === 'name' ? 'text-left' : 'text-right'
-                } ${col.sortable && onSort ? 'cursor-pointer hover:text-neutral-300' : ''}`}
-              >
-                {col.label}
-                {sort === col.key && <span className="ml-0.5">{desc ? '↓' : '↑'}</span>}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr
-              key={row.symbol}
-              onClick={onPick ? () => onPick(row.symbol) : undefined}
-              className={`border-b border-neutral-900 transition-colors ${
-                onPick ? 'cursor-pointer hover:bg-neutral-800/50' : ''
-              } ${row.symbol === highlight ? 'bg-neutral-800/60' : ''}`}
-            >
-              <td className="px-2 py-1.5">
-                <span className="text-neutral-200">{row.name}</span>
-                <span className="tabular ml-1 text-neutral-600">{row.symbol}</span>
-                {row.symbol === highlight && (
-                  <span className="ml-1 rounded bg-neutral-700 px-1 text-[10px] text-neutral-200">
-                    이 종목
-                  </span>
-                )}
-              </td>
-              <td className="tabular px-2 py-1.5 text-right text-neutral-200">{cell(row.per)}</td>
-              <td className="tabular px-2 py-1.5 text-right text-neutral-200">{cell(row.pbr)}</td>
-              <td className="tabular px-2 py-1.5 text-right text-neutral-300">
-                {cell(row.roe, '%')}
-              </td>
-              <td className="tabular px-2 py-1.5 text-right text-neutral-300">
-                {cell(row.dividend_yield, '%')}
-              </td>
-              <td className="tabular px-2 py-1.5 text-right text-neutral-300">
-                {cell(row.revenue_growth, '%')}
-              </td>
-              <td className="tabular px-2 py-1.5 text-right text-neutral-400">
-                {formatBigWon(row.market_cap)}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <DataTable
+      variant="embedded"
+      dense
+      caption="종목별 밸류에이션 지표 비교"
+      rows={rows}
+      columns={columns}
+      rowKey={(row) => row.symbol}
+      selectedKey={highlight ?? null}
+      onSelect={onPick}
+      // 7 열이라 좁은 화면에서는 눌러 담기지 않고 옆으로 넘긴다. 첫 열(종목)은 붙잡아
+      // 둬야 가로로 밀었을 때 어느 회사의 숫자인지 알 수 있다.
+      minWidth="min-w-[520px]"
+      stickyFirst
+      sort={sort}
+      desc={desc}
+      onSort={onSort}
+      empty="보여줄 종목이 없습니다."
+    />
   )
+}
+
+/** 오른쪽 정렬 + 고정폭 숫자 열. 여섯 개가 같은 모양이라 한 줄로 줄인다. */
+function num(
+  key: string,
+  header: string,
+  render: (row: ScreenRow) => string,
+  tone = 'text-neutral-300',
+): Column<ScreenRow> {
+  return {
+    key,
+    header,
+    align: 'right',
+    sortable: true,
+    cellClassName: `tabular ${tone}`,
+    render,
+  }
 }

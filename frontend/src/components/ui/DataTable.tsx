@@ -19,6 +19,8 @@ export type Column<T> = {
   /** 머리글 아래 작은 줄. 확정 종가의 기준일처럼 열 자체에 붙는 단서. */
   subHeader?: ReactNode
   align?: 'left' | 'right'
+  /** 이 열로 정렬할 수 있는가. onSort 가 함께 있어야 실제로 동작한다. */
+  sortable?: boolean
   /** 칸에 붙는 추가 클래스. 값에 따라 달라지면 함수로 준다(등락 색 등). */
   cellClassName?: string | ((row: T) => string)
   render: (row: T) => ReactNode
@@ -37,6 +39,14 @@ type DataTableProps<T> = {
   /** 가로 스크롤 시 첫 열을 붙잡아 둔다. */
   stickyFirst?: boolean
   empty?: ReactNode
+  /** card = 테두리를 두른 독립 표 · embedded = 카드 안에 박히는 표 */
+  variant?: 'card' | 'embedded'
+  /** 열이 많아 자리가 빠듯할 때. 여백과 글자를 한 단 줄인다. */
+  dense?: boolean
+  /** 정렬 상태. 머리글이 버튼이 되고 aria-sort 가 붙는다. */
+  sort?: string
+  desc?: boolean
+  onSort?: (key: string) => void
 }
 
 export function DataTable<T>({
@@ -49,11 +59,20 @@ export function DataTable<T>({
   minWidth = 'min-w-[720px]',
   stickyFirst = false,
   empty = '조건에 맞는 항목이 없습니다.',
+  variant = 'card',
+  dense = false,
+  sort,
+  desc,
+  onSort,
 }: DataTableProps<T>) {
   const bodyRef = useRef<HTMLTableSectionElement>(null)
+  const pad = dense ? 'px-2 py-1.5' : 'px-3 py-2'
+  const embedded = variant === 'embedded'
 
   if (rows.length === 0) {
-    return (
+    return embedded ? (
+      <p className="px-3 py-4 text-xs text-neutral-500">{empty}</p>
+    ) : (
       <div className="rounded-lg border border-neutral-800 p-8 text-center text-sm text-neutral-500">
         {empty}
       </div>
@@ -109,28 +128,62 @@ export function DataTable<T>({
   const selectable = onSelect !== undefined
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-neutral-800">
-      <table className={`w-full ${minWidth} text-sm whitespace-nowrap`}>
+    <div
+      className={`overflow-x-auto ${embedded ? '' : 'rounded-lg border border-neutral-800'}`}
+    >
+      <table className={`w-full ${minWidth} ${dense ? 'text-xs' : 'text-sm'} whitespace-nowrap`}>
         <caption className="sr-only">{caption}</caption>
-        <thead className="bg-neutral-900 text-xs text-neutral-400">
+        <thead
+          className={
+            embedded
+              ? 'border-b border-neutral-800 text-xs text-neutral-500'
+              : 'bg-neutral-900 text-xs text-neutral-400'
+          }
+        >
           <tr>
-            {columns.map((column, i) => (
-              <th
-                key={column.key}
-                scope="col"
-                className={`px-3 py-2 font-medium ${
-                  column.align === 'right' ? 'text-right' : 'text-left'
-                } ${stickyFirst && i === 0 ? 'sticky left-0 z-10 bg-neutral-900' : ''}`}
-              >
-                {column.header}
-                {column.subHeader !== undefined && (
-                  <div className="font-normal text-neutral-600">{column.subHeader}</div>
-                )}
-              </th>
-            ))}
+            {columns.map((column, i) => {
+              const sorted = sort === column.key
+              const canSort = column.sortable === true && onSort !== undefined
+              return (
+                <th
+                  key={column.key}
+                  scope="col"
+                  // 정렬 상태를 화살표 글자로만 알리면 스크린리더에는 전달되지 않는다.
+                  aria-sort={
+                    canSort ? (sorted ? (desc ? 'descending' : 'ascending') : 'none') : undefined
+                  }
+                  className={`${pad} ${embedded ? 'font-normal' : 'font-medium'} ${
+                    column.align === 'right' ? 'text-right' : 'text-left'
+                  } ${stickyFirst && i === 0 ? 'sticky left-0 z-10 bg-neutral-900' : ''}`}
+                >
+                  {canSort ? (
+                    <button
+                      type="button"
+                      onClick={() => onSort(column.key)}
+                      className="transition-colors hover:text-neutral-300"
+                    >
+                      {column.header}
+                      {sorted && (
+                        <span aria-hidden className="ml-0.5">
+                          {desc ? '↓' : '↑'}
+                        </span>
+                      )}
+                    </button>
+                  ) : (
+                    column.header
+                  )}
+                  {column.subHeader !== undefined && (
+                    <div className="font-normal text-neutral-600">{column.subHeader}</div>
+                  )}
+                </th>
+              )
+            })}
           </tr>
         </thead>
-        <tbody ref={bodyRef} className="divide-y divide-neutral-800/70">
+        <tbody
+          ref={bodyRef}
+          className={embedded ? 'divide-y divide-neutral-900' : 'divide-y divide-neutral-800/70'}
+        >
           {rows.map((row, index) => {
             const key = rowKey(row)
             const selected = key === selectedKey
@@ -142,13 +195,21 @@ export function DataTable<T>({
                 onKeyDown={selectable ? (event) => handleKey(event, index) : undefined}
                 onClick={selectable ? () => onSelect(key) : undefined}
                 className={`transition-colors ${selectable ? 'cursor-pointer' : ''} ${
-                  selected ? 'bg-neutral-800/80' : selectable ? 'hover:bg-neutral-900/70' : ''
+                  selected
+                    ? embedded
+                      ? 'bg-neutral-800/60'
+                      : 'bg-neutral-800/80'
+                    : selectable
+                      ? embedded
+                        ? 'hover:bg-neutral-800/50'
+                        : 'hover:bg-neutral-900/70'
+                      : ''
                 }`}
               >
                 {columns.map((column, i) => (
                   <td
                     key={column.key}
-                    className={`px-3 py-2 ${column.align === 'right' ? 'text-right' : ''} ${
+                    className={`${pad} ${column.align === 'right' ? 'text-right' : ''} ${
                       typeof column.cellClassName === 'function'
                         ? column.cellClassName(row)
                         : (column.cellClassName ?? '')

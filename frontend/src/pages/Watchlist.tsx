@@ -14,6 +14,7 @@ import { MarketBadge } from '../components/MarketBadge'
 import { StockDetailPanel } from '../components/StockDetailPanel'
 import { UsDetailPanel } from '../components/UsDetailPanel'
 import { ErrorBox } from '../components/ui/Status'
+import { DataTable, type Column } from '../components/ui/DataTable'
 
 // 관심종목 탭. 기획서 5.1 의 관심종목 그리드다.
 //
@@ -24,8 +25,6 @@ import { ErrorBox } from '../components/ui/Status'
 // **거래량은 넣지 않았다.** 토스 현재가 응답에 거래량이 없고, KRX 확정 거래량은 하루
 // 늦은 값이다. 국내만 하루 전 거래량을 보여주면 미국 열은 비게 되고, 사용자는 어느
 // 시점의 값인지 알 수 없다. 없는 것보다 나쁘다.
-
-const NUMBER_COL = 'tabular px-2 py-1.5 text-right'
 
 export function Watchlist() {
   const { items, loading, error, loaded } = useWatchlist()
@@ -50,6 +49,92 @@ export function Watchlist() {
     item.market === 'KR' ? kr.bySymbol.get(item.symbol) : us.bySymbol.get(item.symbol)
 
   const selectedItem = items.find((i) => i.symbol === selected) ?? null
+
+  const columns: Column<WatchItem>[] = [
+    {
+      key: 'name',
+      header: '종목',
+      render: (item) => (
+        <div className="flex items-baseline gap-1.5">
+          <span className="text-xs text-neutral-500">
+            {item.market === 'KR' ? '국내' : '미국'}
+          </span>
+          <span>{item.name}</span>
+          <span className="tabular text-xs text-neutral-500">{item.symbol}</span>
+        </div>
+      ),
+    },
+    {
+      key: 'price',
+      header: '현재가',
+      align: 'right',
+      cellClassName: 'tabular',
+      render: (item) => computeChange(item, liveOf(item)).price ?? '—',
+    },
+    {
+      key: 'change',
+      header: '등락률',
+      align: 'right',
+      cellClassName: (item) => {
+        const rate = computeChange(item, liveOf(item)).rate
+        return `tabular ${rate ? changeColor(rate) : 'text-neutral-500'}`
+      },
+      render: (item) => {
+        const change = computeChange(item, liveOf(item))
+        if (change.rate === null) return '—'
+        return (
+          <>
+            {formatRate(change.rate)}
+            {change.amount && <span className="ml-1 text-xs text-neutral-500">{change.amount}</span>}
+          </>
+        )
+      },
+    },
+    {
+      // 기준일을 항목마다 적는다. 국내는 KRX 확정 종가(하루 늦다), 미국은 직전 일봉이라
+      // 같은 표 안에서 기준 시점이 다르다.
+      key: 'base_date',
+      header: '기준',
+      align: 'right',
+      cellClassName: 'text-xs text-neutral-600',
+      render: (item) => (item.base_date ? formatShortDate(item.base_date) : '—'),
+    },
+    {
+      key: 'order',
+      header: '순서',
+      align: 'right',
+      cellClassName: 'whitespace-nowrap',
+      render: (item) => {
+        const index = items.findIndex((i) => i.symbol === item.symbol)
+        return (
+          // 행 선택과 겹치지 않게 클릭을 여기서 멈춘다.
+          <span onClick={(event) => event.stopPropagation()}>
+            <IconButton label="위로" disabled={index === 0} onClick={() => void move(item.symbol, 'up')}>
+              ↑
+            </IconButton>
+            <IconButton
+              label="아래로"
+              disabled={index === items.length - 1}
+              onClick={() => void move(item.symbol, 'down')}
+            >
+              ↓
+            </IconButton>
+            <IconButton
+              label="관심종목에서 빼기"
+              onClick={() =>
+                void toggle(item.symbol).catch(() => {
+                  // 실패해도 목록을 서버 기준으로 되돌린다 — 지워진 것처럼 보이면 안 된다.
+                  void refresh()
+                })
+              }
+            >
+              ✕
+            </IconButton>
+          </span>
+        )
+      },
+    },
+  ]
 
   const onAdd = (event: React.FormEvent) => {
     event.preventDefault()
@@ -126,32 +211,15 @@ export function Watchlist() {
         </div>
       ) : (
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_420px]">
-          <div className="overflow-x-auto rounded-lg border border-neutral-800">
-            <table className="w-full text-sm">
-              <thead className="bg-neutral-900/60 text-xs text-neutral-500">
-                <tr>
-                  <th className="px-2 py-2 text-left font-normal">종목</th>
-                  <th className="px-2 py-2 text-right font-normal">현재가</th>
-                  <th className="px-2 py-2 text-right font-normal">등락률</th>
-                  <th className="px-2 py-2 text-right font-normal">기준</th>
-                  <th className="px-2 py-2 text-right font-normal">순서</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-neutral-800">
-                {items.map((item, index) => (
-                  <Row
-                    key={item.symbol}
-                    item={item}
-                    live={liveOf(item)}
-                    selected={item.symbol === selected}
-                    isFirst={index === 0}
-                    isLast={index === items.length - 1}
-                    onSelect={() => setSelected(item.symbol)}
-                  />
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            caption="관심종목 목록"
+            rows={items}
+            columns={columns}
+            rowKey={(item) => item.symbol}
+            selectedKey={selected}
+            onSelect={setSelected}
+            minWidth="min-w-[560px]"
+          />
 
           <aside>
             {selectedItem === null ? (
@@ -177,81 +245,6 @@ export function Watchlist() {
   )
 }
 
-type RowProps = {
-  item: WatchItem
-  live: LiveQuote | undefined
-  selected: boolean
-  isFirst: boolean
-  isLast: boolean
-  onSelect: () => void
-}
-
-function Row({ item, live, selected, isFirst, isLast, onSelect }: RowProps) {
-  const change = computeChange(item, live)
-
-  return (
-    <tr
-      onClick={onSelect}
-      className={`cursor-pointer transition-colors ${
-        selected ? 'bg-neutral-800/70' : 'hover:bg-neutral-900/60'
-      }`}
-    >
-      <td className="px-2 py-1.5">
-        <div className="flex items-baseline gap-1.5">
-          <span className="text-[10px] text-neutral-500">
-            {item.market === 'KR' ? '국내' : '미국'}
-          </span>
-          <span>{item.name}</span>
-          <span className="tabular text-xs text-neutral-500">{item.symbol}</span>
-        </div>
-      </td>
-      <td className={NUMBER_COL}>{change.price ?? '—'}</td>
-      <td className={`${NUMBER_COL} ${change.rate ? changeColor(change.rate) : 'text-neutral-500'}`}>
-        {change.rate === null ? (
-          '—'
-        ) : (
-          <>
-            {formatRate(change.rate)}
-            {change.amount && (
-              <span className="ml-1 text-xs text-neutral-500">{change.amount}</span>
-            )}
-          </>
-        )}
-      </td>
-      {/* 기준일을 항목마다 적는다. 국내는 KRX 확정 종가(하루 늦다), 미국은 직전 일봉이라
-          같은 표 안에서 기준 시점이 다르다. */}
-      <td className="px-2 py-1.5 text-right text-[11px] text-neutral-600">
-        {item.base_date ? formatShortDate(item.base_date) : '—'}
-      </td>
-      <td className="px-2 py-1.5 text-right whitespace-nowrap">
-        {/* 행 선택과 겹치지 않게 클릭을 여기서 멈춘다. */}
-        <span onClick={(event) => event.stopPropagation()}>
-          <IconButton label="위로" disabled={isFirst} onClick={() => void move(item.symbol, 'up')}>
-            ↑
-          </IconButton>
-          <IconButton
-            label="아래로"
-            disabled={isLast}
-            onClick={() => void move(item.symbol, 'down')}
-          >
-            ↓
-          </IconButton>
-          <IconButton
-            label="관심종목에서 빼기"
-            onClick={() =>
-              void toggle(item.symbol).catch(() => {
-                // 실패해도 목록을 서버 기준으로 되돌린다 — 지워진 것처럼 보이면 안 된다.
-                void refresh()
-              })
-            }
-          >
-            ✕
-          </IconButton>
-        </span>
-      </td>
-    </tr>
-  )
-}
 
 function IconButton({
   label,
