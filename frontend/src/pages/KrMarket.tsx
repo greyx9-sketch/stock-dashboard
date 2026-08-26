@@ -197,7 +197,7 @@ export function KrMarket() {
         </div>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_420px]">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_420px]">
         <StockTable
           stocks={stocks}
           live={livePrices.bySymbol}

@@ -42,7 +42,9 @@ export default function App() {
           있으므로 겹쳐 두지 않는다. */}
       {country !== 'CAL' && <UpcomingEvents />}
 
-      <div className="mx-auto max-w-7xl px-4 py-6">
+      {/* 1280px 은 이만한 표를 담기에 좁다. 큰 화면에서는 목록에 폭을 더 준다.
+          — 그래야 시가총액 열까지 가로 스크롤 없이 들어온다. */}
+      <div className="mx-auto max-w-7xl px-4 py-6 xl:max-w-[1440px]">
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <h1 className="text-2xl font-semibold">주식 시세</h1>
         <div className="flex gap-1 rounded-md bg-neutral-900 p-0.5">

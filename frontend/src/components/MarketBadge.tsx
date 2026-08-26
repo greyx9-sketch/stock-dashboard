@@ -10,7 +10,8 @@ const DOT_STYLE: Record<string, string> = {
   AFTER: 'bg-amber-400',
   CLOSED: 'bg-neutral-500',
   HOLIDAY: 'bg-neutral-500',
-  UNKNOWN: 'bg-neutral-600',
+  // 대비를 맞추며 500 과 600 이 가까워졌다. "상태를 모름"은 마감과 구별돼야 하므로 한 단 내린다.
+  UNKNOWN: 'bg-neutral-700',
 }
 
 type Props = {

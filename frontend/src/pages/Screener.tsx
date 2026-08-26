@@ -89,7 +89,7 @@ export function Screener() {
     setFilters({ sort: 'market_cap', desc: true, market: filters.market ?? null })
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[1fr_26rem]">
+    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_26rem]">
       <div>
         <div className="mb-3 flex flex-wrap items-center gap-1.5">
           <span className="mr-1 text-sm font-semibold">종목 고르기</span>

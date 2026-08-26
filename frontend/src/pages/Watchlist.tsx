@@ -124,7 +124,7 @@ export function Watchlist() {
           </p>
         </div>
       ) : (
-        <div className="grid gap-6 lg:grid-cols-[1fr_420px]">
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_420px]">
           <div className="overflow-x-auto rounded-lg border border-neutral-800">
             <table className="w-full text-sm">
               <thead className="bg-neutral-900/60 text-xs text-neutral-500">

@@ -114,7 +114,7 @@ export function UsMarket() {
         </div>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_420px]">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_420px]">
         <UsTable
           stocks={stocks}
           live={livePrices.bySymbol}
