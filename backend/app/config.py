@@ -51,6 +51,11 @@ class Settings(BaseSettings):
     site_user: str | None = None
     site_password: str | None = None
 
+    # 배포된 사이트 주소. 알림 메시지에 "확인하러 갈 곳"으로 붙는다.
+    # 기본값은 지금 쓰는 예약 IP 다 — .env 에 없어도 알림이 주소 없이 나가지 않게 한다.
+    # 나중에 도메인을 붙이면 .env 의 SITE_URL 만 바꾸면 되고 코드는 건드릴 필요가 없다.
+    site_url: str = "http://129.225.188.89"
+
     # 앱 오류 알림을 보낼 주소. 텔레그램·디스코드·슬랙 셋 다 이 한 칸으로 받는다.
     # 비어 있으면 감시는 그대로 돌고 알림만 건너뛴다. 없다고 서버가 멈추지 않는다.
     alert_webhook_url: str | None = None

@@ -591,6 +591,9 @@ sudo -u stock -H bash -c 'cd /opt/stock && ./.venv/bin/python backend/scripts/wa
 사면(연 1~2만원), A 레코드를 이 IP 로 걸고 `deploy/Caddyfile` 의 주석 처리된 HTTPS
 블록으로 바꾸는 것만으로 Caddy 가 인증서를 알아서 받는다. 아이디·비밀번호는 그대로 쓴다.
 
+주소를 적어 두는 곳도 한 곳으로 모았다(2026-08-26). `.env` 의 `SITE_URL` 이며, 가동 감시
+알림에 붙는 링크가 이 값을 읽는다. 도메인을 붙이면 여기만 고치면 되고 코드는 손대지 않는다.
+
 ### ✅ 아이디·비밀번호 — 이대로 두기로 함 (2026-08-17)
 
 둘 다 `.env` 의 `SITE_USER`·`SITE_PASSWORD` 한 곳에서 관리한다. 고친 뒤 서버에서

@@ -12,7 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
-from watchdog import _body, compose  # noqa: E402
+from watchdog import _body, _site_url, compose  # noqa: E402
 
 
 PAYLOAD = {
@@ -40,7 +40,15 @@ def test_message_skips_healthy_checks():
 
 def test_message_includes_site_url():
     """알림을 받고 바로 확인하러 갈 수 있어야 한다."""
-    assert "129.225.188.89" in compose("down", "앱이 응답하지 않습니다", None)
+    assert _site_url() in compose("down", "앱이 응답하지 않습니다", None)
+
+
+def test_site_url_comes_from_settings(monkeypatch):
+    """주소를 코드에 박아 두지 않는다. 도메인을 붙이면 `.env` 만 고치면 된다."""
+    import watchdog as w
+
+    monkeypatch.setattr(w, "_site_url", lambda: "https://example.test")
+    assert "https://example.test" in w.compose("down", "앱이 응답하지 않습니다", None)
 
 
 def test_message_works_without_payload():

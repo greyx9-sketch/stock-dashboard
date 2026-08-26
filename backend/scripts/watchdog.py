@@ -54,12 +54,20 @@ STATE_FILE = PROJECT_ROOT / "data" / "watchdog_state.json"
 
 TIMEOUT_SEC = 15
 
-SITE_URL = "http://129.225.188.89"
-
 TELEGRAM_HOST = "api.telegram.org"
 
 # 키는 여기에만 있다(절대 규칙 1). 텔레그램 주소도 봇 토큰을 품고 있으므로 같은 파일에 둔다.
 ENV_FILE = PROJECT_ROOT / ".env"
+
+
+def _site_url() -> str:
+    """알림에 붙일 사이트 주소. `.env` 의 `SITE_URL` 을 읽는다.
+
+    예전에는 이 파일에 IP 를 박아 두었다. 주소가 바뀌면 코드를 고쳐 다시 배포해야 했고,
+    무엇보다 **알림에만 쓰이는 값이라 틀려도 티가 나지 않는다** — 고장났을 때 받은
+    링크가 죽은 주소면 그때서야 안다. 설정 한 곳에서 읽게 두었다.
+    """
+    return get_settings().site_url
 
 
 def _fetch_health(url: str | None = None) -> tuple[str, str, dict | None]:
@@ -238,7 +246,7 @@ def compose(status: str, summary: str, payload: dict | None) -> str:
             lines += [f"· {e['status']} {e['path']}" for e in errors[:5]]
 
     lines.append("")
-    lines.append(SITE_URL)
+    lines.append(_site_url())
     return "\n".join(lines)
 
 
@@ -280,7 +288,7 @@ def main() -> int:
 
     if status == "ok":
         if previous != "ok":
-            message = f"🟢 [증권 대시보드] 정상으로 돌아왔습니다.\n\n{SITE_URL}"
+            message = f"🟢 [증권 대시보드] 정상으로 돌아왔습니다.\n\n{_site_url()}"
             if args.dry_run:
                 print("--- 보낼 내용 ---\n" + message)
             elif webhook:
