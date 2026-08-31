@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import type { PricePoint } from '../lib/api'
 import { formatShortDate, formatWon, formatRate, changeColor } from '../lib/format'
 import { Card } from './ui/Card'
+import { Skeleton } from './ui/Skeleton'
 
 // 차트 라이브러리를 쓰지 않고 SVG 로 직접 그린다.
 // 지금 필요한 것은 종가 선 하나뿐이라 라이브러리를 하나 더 붙일 이유가 없다.
@@ -13,9 +14,11 @@ const PADDING = { top: 16, right: 8, bottom: 24, left: 8 }
 
 type Props = {
   points: PricePoint[]
+  /** 아직 받는 중인가. 자료가 없는 것과 아직 안 온 것은 화면에서 달라야 한다. */
+  loading?: boolean
 }
 
-export function PriceChart({ points }: Props) {
+export function PriceChart({ points, loading = false }: Props) {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null)
 
   const geometry = useMemo(() => {
@@ -41,11 +44,21 @@ export function PriceChart({ points }: Props) {
     return { xy, line, area, min, max }
   }, [points])
 
+  // 그릴 것이 없을 때도 자리는 같은 높이로 남긴다. 차트가 나중에 들어오면서
+  // 아래 카드들을 밀어내지 않게 하려는 것이다.
   if (!geometry) {
     return (
-      <div className="flex h-60 items-center justify-center rounded-lg border border-neutral-800 text-sm text-neutral-500">
-        차트를 그리려면 거래일이 2일 이상 필요합니다.
-      </div>
+      <Card bodyClassName="p-3">
+        <div className="flex h-56 items-center justify-center">
+          {loading ? (
+            <Skeleton rows={6} label="차트를 받는 중…" className="w-full" />
+          ) : (
+            <p className="text-sm text-neutral-500">
+              차트를 그리려면 거래일이 2일 이상 필요합니다.
+            </p>
+          )}
+        </div>
+      </Card>
     )
   }
 

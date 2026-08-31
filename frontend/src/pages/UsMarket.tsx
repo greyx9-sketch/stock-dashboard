@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { fetchUsList, searchUsStocks } from '../lib/api'
 import type { UsListItem } from '../lib/api'
+import type { Section } from '../lib/useRoute'
 import { useLivePrices } from '../lib/useLivePrices'
 import { UsTable } from '../components/UsTable'
 import { UsDetailPanel } from '../components/UsDetailPanel'
@@ -15,12 +16,24 @@ import { ErrorBox } from '../components/ui/Status'
 
 const LIST_LIMIT = 50
 
-export function UsMarket() {
+type Props = {
+  /** 지금 열려 있는 종목. 주소가 들고 있다(`lib/useRoute`). */
+  symbol: string | null
+  section: Section
+  onSelect: (symbol: string | null) => void
+  onSection: (section: Section) => void
+}
+
+export function UsMarket({ symbol, section, onSelect, onSection }: Props) {
   const [stocks, setStocks] = useState<UsListItem[]>([])
   const [keyword, setKeyword] = useState('')
-  const [selected, setSelected] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+
+  // 국내 화면과 같은 이유 — 목록을 받은 뒤 열려 있는 종목을 봐야 하지만, 그것을
+  // 의존성에 넣으면 종목을 누를 때마다 목록을 다시 받는다.
+  const selectedRef = useRef(symbol)
+  selectedRef.current = symbol
 
   useEffect(() => {
     let cancelled = false
@@ -54,13 +67,15 @@ export function UsMarket() {
         .then((result) => {
           if (cancelled) return
           setStocks(result)
-          setSelected((current) => {
-            if (current && result.some((s) => s.symbol === current)) return current
+
+          const current = selectedRef.current
+          const inList = current !== null && result.some((s) => s.symbol === current)
+          if (current === null || (trimmed !== '' && !inList)) {
             // 거래대금 상위에는 ETF 가 많이 올라오는데, ETF 는 재무·공시가 비어 있어
             // 첫 화면으로는 허전하다. 사업회사가 있으면 그쪽을 먼저 연다.
             const firstStock = result.find((s) => s.security_type === 'STOCK')
-            return (firstStock ?? result[0])?.symbol ?? null
-          })
+            onSelect((firstStock ?? result[0])?.symbol ?? null)
+          }
         })
         .catch((err: Error) => {
           if (!cancelled) setError(err.message)
@@ -74,17 +89,17 @@ export function UsMarket() {
       cancelled = true
       clearTimeout(timer)
     }
-  }, [keyword])
+  }, [keyword, onSelect])
 
   const watchedSymbols = useMemo(() => {
     const symbols = stocks.map((s) => s.symbol)
-    if (selected && !symbols.includes(selected)) symbols.push(selected)
+    if (symbol && !symbols.includes(symbol)) symbols.push(symbol)
     return symbols
-  }, [stocks, selected])
+  }, [stocks, symbol])
 
   // 미국 화면이므로 미국 장 상태를 본다. 한국 장 시간과 완전히 다르다.
   const livePrices = useLivePrices(watchedSymbols, 'US')
-  const selectedItem = stocks.find((s) => s.symbol === selected)
+  const selectedItem = stocks.find((s) => s.symbol === symbol)
 
   return (
     <div>
@@ -115,20 +130,24 @@ export function UsMarket() {
         </ErrorBox>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_420px]">
+      {/* 국내 화면과 같은 짜임 — 넓힌 상세 기둥 + 화면에 붙잡아 두기.
+          두 화면이 다르게 움직이면 탭을 옮길 때마다 규칙을 다시 익혀야 한다. */}
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_480px] xl:grid-cols-[minmax(0,1fr)_560px]">
         <UsTable
           stocks={stocks}
           live={livePrices.bySymbol}
-          selectedSymbol={selected}
-          onSelect={setSelected}
+          selectedSymbol={symbol}
+          onSelect={onSelect}
         />
-        <aside>
-          {selected && (
+        <aside className="lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:self-start lg:overflow-y-auto lg:pr-1">
+          {symbol && (
             <UsDetailPanel
-              symbol={selected}
+              symbol={symbol}
               listItem={selectedItem}
-              live={livePrices.bySymbol.get(selected)}
+              live={livePrices.bySymbol.get(symbol)}
               market={livePrices.market}
+              section={section}
+              onSection={onSection}
             />
           )}
         </aside>

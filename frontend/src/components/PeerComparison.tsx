@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { fetchPeers, type ScreenResult } from '../lib/api'
 import { MetricTable } from './MetricTable'
 import { Card } from './ui/Card'
+import { Skeleton } from './ui/Skeleton'
 
 // 동종업계 비교. 기획서 5.4 — "같은 업종 종목의 밸류에이션·성장률 나열".
 //
@@ -47,7 +48,7 @@ export function PeerComparison({ symbol }: Props) {
   if (loading) {
     return (
       <Shell>
-        <p className="px-3 py-3 text-xs text-neutral-500">동종업계를 찾는 중…</p>
+        <Skeleton rows={6} label="동종업계를 찾는 중…" className="px-3 py-3" />
       </Shell>
     )
   }

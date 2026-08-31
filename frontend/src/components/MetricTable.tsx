@@ -62,9 +62,12 @@ export function MetricTable({ rows, highlight, onPick, sort, desc, onSort }: Pro
       rowKey={(row) => row.symbol}
       selectedKey={highlight ?? null}
       onSelect={onPick}
-      // 7 열이라 좁은 화면에서는 눌러 담기지 않고 옆으로 넘긴다. 첫 열(종목)은 붙잡아
-      // 둬야 가로로 밀었을 때 어느 회사의 숫자인지 알 수 있다.
-      minWidth="min-w-[520px]"
+      // 520px 이던 것을 460 으로 내렸다. 이 표는 종목 상세의 동종업계 비교로도 쓰이는데
+      // 그 기둥이 520 보다 좁아서 매출 열이 늘 잘려 나갔다 — 있는데 안 보이는 상태였다.
+      // 기둥을 480 으로 넓히고 표를 460 으로 줄여 양쪽에서 만나게 했다.
+      // 그보다 더 좁아지면 눌러 담지 않고 옆으로 넘긴다. 첫 열(종목)은 붙잡아 둬야
+      // 가로로 밀었을 때 어느 회사의 숫자인지 알 수 있다.
+      minWidth="min-w-[460px]"
       stickyFirst
       sort={sort}
       desc={desc}

@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react'
 import { fetchValuation, type Valuation } from '../lib/api'
 import { formatBigWon } from '../lib/format'
 import { Card } from './ui/Card'
+import { Skeleton } from './ui/Skeleton'
 import { Metric } from './ui/Metric'
-import { Empty, ErrorBox, Loading } from './ui/Status'
+import { Empty, ErrorBox } from './ui/Status'
 
 // 밸류에이션 — PER · PBR · 배당수익률. 기획서 5.2.
 //
@@ -53,7 +54,7 @@ export function ValuationBox({ symbol }: Props) {
   if (loading && !data) {
     return (
       <Shell>
-        <Loading label="지표를 계산하는 중…" />
+        <Skeleton rows={3} label="지표를 계산하는 중…" />
       </Shell>
     )
   }

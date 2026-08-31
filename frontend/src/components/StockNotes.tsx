@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { createNote, deleteNote, fetchNotes, updateNote } from '../lib/api'
 import type { Note } from '../lib/api'
 import { Card } from './ui/Card'
+import { Skeleton } from './ui/Skeleton'
 
 // 종목 메모. 국내·미국 상세 양쪽에 붙는다.
 //
@@ -112,7 +113,7 @@ export function StockNotes({ symbol }: Props) {
         </div>
 
         {error && <p className="text-xs text-red-400">{error}</p>}
-        {loading && <p className="text-xs text-neutral-500">불러오는 중…</p>}
+        {loading && <Skeleton rows={3} label="메모를 받는 중…" />}
 
         {!loading && notes.length === 0 && !error && (
           <p className="text-xs text-neutral-600">아직 메모가 없습니다.</p>

@@ -5,6 +5,7 @@ import type { FinancialRow } from './FinancialBars'
 import { formatPercent, formatRate, formatUsd } from '../lib/format'
 import { Card } from './ui/Card'
 import { Segmented } from './ui/Segmented'
+import { Skeleton } from './ui/Skeleton'
 
 // 미국 재무의 연간/분기 전환. 국내(`FinancialSummary`)와 같은 짜임이다.
 //
@@ -18,13 +19,16 @@ import { Segmented } from './ui/Segmented'
 type Props = {
   ticker: string
   annual: UsFinancialsResponse | null
-  fallback: React.ReactNode
+  /** 연간이 비어 있을 때 대신 적을 이유. ETF 라서 없는 것과 못 받은 것을 구분한다. */
+  fallback: string | null
+  /** 부모가 아직 연간을 받는 중인가. 없는 것과 아직 안 온 것은 달라 보여야 한다. */
+  loading?: boolean
 }
 
 type Period = 'annual' | 'quarterly'
 type Basis = 'quarter' | 'cumulative'
 
-export function UsFinancialPeriod({ ticker, annual, fallback }: Props) {
+export function UsFinancialPeriod({ ticker, annual, fallback, loading: pending = false }: Props) {
   const [period, setPeriod] = useState<Period>('annual')
   const [basis, setBasis] = useState<Basis>('quarter')
   const [quarterly, setQuarterly] = useState<UsQuarterly | null>(null)
@@ -80,7 +84,17 @@ export function UsFinancialPeriod({ ticker, annual, fallback }: Props) {
       source_url: year.source_url,
     }))
 
-    if (rows.length === 0) return <Shell switcher={switcher}>{fallback}</Shell>
+    if (rows.length === 0) {
+      return (
+        <Shell switcher={switcher}>
+          {pending ? (
+            <Skeleton rows={6} label="재무를 받는 중…" />
+          ) : (
+            (fallback ?? '재무 데이터가 없습니다.')
+          )}
+        </Shell>
+      )
+    }
 
     return (
       <FinancialBars
@@ -97,7 +111,11 @@ export function UsFinancialPeriod({ ticker, annual, fallback }: Props) {
   }
 
   if (loading && !quarterly) {
-    return <Shell switcher={switcher}>분기 데이터를 받는 중… (처음 보는 종목은 몇 초 걸립니다)</Shell>
+    return (
+      <Shell switcher={switcher}>
+        <Skeleton rows={6} label="분기 데이터를 받는 중… (처음 보는 종목은 몇 초 걸립니다)" />
+      </Shell>
+    )
   }
   if (error || !quarterly || quarterly.quarters.length === 0) {
     return <Shell switcher={switcher}>{error ?? '분기 데이터가 없습니다.'}</Shell>

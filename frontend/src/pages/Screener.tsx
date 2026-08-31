@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { fetchScreen, type ScreenFilters, type ScreenResult } from '../lib/api'
 import { MetricTable } from '../components/MetricTable'
 import { StockDetailPanel } from '../components/StockDetailPanel'
+import type { Section } from '../lib/useRoute'
 import { useLivePrices } from '../lib/useLivePrices'
 import { ErrorBox } from '../components/ui/Status'
 
@@ -54,6 +55,9 @@ export function Screener() {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [picked, setPicked] = useState<string | null>(null)
+  // 이 화면은 아직 주소를 쓰지 않는다(4단계). 섹션은 여기서만 들고 있는다 —
+  // 국내·미국 탭과 상세의 생김새는 같아야 하므로 상태만 지역으로 둔다.
+  const [section, setSection] = useState<Section>('overview')
 
   // 고른 종목 하나만 현재가를 받는다. 상세 화면은 토스를 따로 부르지 않고 이 값을
   // 쓰도록 만들어져 있다 — 목록 100줄 전부를 폴링하면 구독 한도만 태운다.
@@ -191,6 +195,8 @@ export function Screener() {
             symbol={picked}
             live={live.bySymbol.get(picked)}
             market={live.market}
+            section={section}
+            onSection={setSection}
           />
         ) : (
           <div className="rounded-lg border border-neutral-800 bg-neutral-900/40 px-3 py-4 text-xs text-neutral-500">

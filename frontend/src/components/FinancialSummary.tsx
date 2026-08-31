@@ -5,6 +5,7 @@ import { FinancialBars } from './FinancialBars'
 import type { FinancialRow } from './FinancialBars'
 import { formatBigWon, formatPercent, formatRate } from '../lib/format'
 import { Card } from './ui/Card'
+import { Skeleton } from './ui/Skeleton'
 import { Segmented } from './ui/Segmented'
 
 // 국내 재무(OpenDART). 받아 온 응답을 공통 표시 형태로 옮기는 일만 한다.
@@ -86,9 +87,14 @@ export function FinancialSummary({ symbol }: Props) {
   if (loading && !data) {
     return (
       <Shell switcher={switcher}>
-        {period === 'annual'
-          ? '재무 데이터를 받는 중… (처음 보는 종목은 몇 초 걸립니다)'
-          : '분기 데이터를 받는 중… (처음 보는 종목은 십여 초 걸립니다)'}
+        <Skeleton
+          rows={7}
+          label={
+            period === 'annual'
+              ? '재무 데이터를 받는 중… (처음 보는 종목은 몇 초 걸립니다)'
+              : '분기 데이터를 받는 중… (처음 보는 종목은 십여 초 걸립니다)'
+          }
+        />
       </Shell>
     )
   }

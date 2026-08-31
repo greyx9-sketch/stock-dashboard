@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { fetchDisclosures } from '../lib/api'
 import type { DisclosureItem } from '../lib/api'
 import { Card } from './ui/Card'
+import { Skeleton } from './ui/Skeleton'
 import { Segmented } from './ui/Segmented'
 import { Empty, ErrorBox, Loading } from './ui/Status'
 
@@ -80,7 +81,9 @@ export function DisclosureList({ symbol }: Props) {
     >
       {error ? (
         <ErrorBox className="px-3 py-4">{error}</ErrorBox>
-      ) : items.length === 0 && !loading ? (
+      ) : items.length === 0 && loading ? (
+        <Skeleton rows={6} label="공시를 받는 중…" className="px-3 py-3" />
+      ) : items.length === 0 ? (
         <Empty className="px-3 py-4" title="최근 2년간 해당 공시가 없습니다." />
       ) : (
         <ul className="max-h-72 divide-y divide-neutral-800/70 overflow-y-auto">

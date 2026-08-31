@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { LiveQuote, UsListItem, WatchItem } from '../lib/api'
+import type { Section } from '../lib/useRoute'
 import { move, refresh, toggle, useWatchlist } from '../lib/watchlistStore'
 import { useLivePrices } from '../lib/useLivePrices'
 import {
@@ -26,9 +27,16 @@ import { DataTable, type Column } from '../components/ui/DataTable'
 // 늦은 값이다. 국내만 하루 전 거래량을 보여주면 미국 열은 비게 되고, 사용자는 어느
 // 시점의 값인지 알 수 없다. 없는 것보다 나쁘다.
 
-export function Watchlist() {
+type Props = {
+  /** 지금 열려 있는 종목. 국내·미국 탭과 같이 주소가 들고 있다(`lib/useRoute`). */
+  symbol: string | null
+  section: Section
+  onSelect: (symbol: string | null) => void
+  onSection: (section: Section) => void
+}
+
+export function Watchlist({ symbol, section, onSelect, onSection }: Props) {
   const { items, loading, error, loaded } = useWatchlist()
-  const [selected, setSelected] = useState<string | null>(null)
   const [input, setInput] = useState('')
   const [addError, setAddError] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
@@ -48,7 +56,7 @@ export function Watchlist() {
   const liveOf = (item: WatchItem): LiveQuote | undefined =>
     item.market === 'KR' ? kr.bySymbol.get(item.symbol) : us.bySymbol.get(item.symbol)
 
-  const selectedItem = items.find((i) => i.symbol === selected) ?? null
+  const selectedItem = items.find((i) => i.symbol === symbol) ?? null
 
   const columns: Column<WatchItem>[] = [
     {
@@ -210,25 +218,29 @@ export function Watchlist() {
           </p>
         </div>
       ) : (
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_420px]">
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_480px] xl:grid-cols-[minmax(0,1fr)_560px]">
           <DataTable
             caption="관심종목 목록"
             rows={items}
             columns={columns}
             rowKey={(item) => item.symbol}
-            selectedKey={selected}
-            onSelect={setSelected}
+            selectedKey={symbol}
+            onSelect={onSelect}
             minWidth="min-w-[560px]"
           />
 
-          <aside>
+          {/* 국내·미국 탭과 같은 규칙 — 상세를 화면에 붙잡아 둔다. */}
+          <aside className="lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:self-start lg:overflow-y-auto lg:pr-1">
             {selectedItem === null ? (
               <p className="text-sm text-neutral-500">종목을 누르면 상세가 여기 나옵니다.</p>
             ) : selectedItem.market === 'KR' ? (
               <StockDetailPanel
                 symbol={selectedItem.symbol}
+                name={selectedItem.name}
                 live={kr.bySymbol.get(selectedItem.symbol)}
                 market={kr.market}
+                section={section}
+                onSection={onSection}
               />
             ) : (
               <UsDetailPanel
@@ -236,6 +248,8 @@ export function Watchlist() {
                 listItem={syntheticListItem(selectedItem, us.bySymbol.get(selectedItem.symbol))}
                 live={us.bySymbol.get(selectedItem.symbol)}
                 market={us.market}
+                section={section}
+                onSection={onSection}
               />
             )}
           </aside>

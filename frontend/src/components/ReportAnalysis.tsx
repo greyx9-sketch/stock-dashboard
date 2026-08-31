@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { fetchKrAnalysis, runKrAnalysis } from '../lib/api'
 import type { KrAnalysis } from '../lib/api'
 import { Card } from './ui/Card'
+import { Skeleton } from './ui/Skeleton'
 
 // 국내 사업보고서 서술 분석 블록. 미국 쪽 TenKAnalysis 와 짝이다.
 //
@@ -78,7 +79,7 @@ export function ReportAnalysis({ symbol }: Props) {
     >
 
       <div className="px-3 py-3">
-        {loading && <p className="text-xs text-neutral-500">불러오는 중…</p>}
+        {loading && <Skeleton rows={3} label="분석 결과를 확인하는 중…" />}
 
         {!loading && running && (
           <div className="space-y-1.5 py-2">

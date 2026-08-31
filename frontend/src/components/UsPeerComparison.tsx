@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { fetchUsPeers, type UsPeers } from '../lib/api'
 import { Card } from './ui/Card'
+import { Skeleton } from './ui/Skeleton'
 
 // 미국 동종업계 비교. 기획서 6.6.
 //
@@ -48,7 +49,7 @@ export function UsPeerComparison({ ticker }: Props) {
   if (loading) {
     return (
       <Shell>
-        <p className="px-3 py-3 text-xs text-neutral-500">동종업계를 찾는 중…</p>
+        <Skeleton rows={6} label="동종업계를 찾는 중…" className="px-3 py-3" />
       </Shell>
     )
   }

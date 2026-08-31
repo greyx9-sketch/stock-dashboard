@@ -66,7 +66,10 @@ export function DataTable<T>({
   onSort,
 }: DataTableProps<T>) {
   const bodyRef = useRef<HTMLTableSectionElement>(null)
-  const pad = dense ? 'px-2 py-1.5' : 'px-3 py-2'
+  // 좌우 12px 이던 것을 10px 로 줄였다. 열이 일곱이라 2px 씩만 줄여도 표 전체가 28px
+  // 좁아지는데, 상세 기둥을 넓히면서 목록에 남은 폭이 딱 그만큼 모자랐다.
+  // 글자 크기는 건드리지 않는다 — 0단계에서 올려 둔 것이다.
+  const pad = dense ? 'px-2 py-1.5' : 'px-2.5 py-2'
   const embedded = variant === 'embedded'
 
   if (rows.length === 0) {

@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { fetchStatus, fetchStocks, searchStocks } from '../lib/api'
 import type { DataStatus, MarketFilter, Quote, SortKey } from '../lib/api'
+import type { Section } from '../lib/useRoute'
 import { useLivePrices } from '../lib/useLivePrices'
 import { formatTimestamp } from '../lib/format'
 import { StockTable } from '../components/StockTable'
@@ -28,6 +29,14 @@ type MarketChoice = (typeof MARKET_OPTIONS)[number]['value']
 
 const LIST_LIMIT = 50
 
+type Props = {
+  /** 지금 열려 있는 종목. 주소가 들고 있다(`lib/useRoute`). */
+  symbol: string | null
+  section: Section
+  onSelect: (symbol: string | null) => void
+  onSection: (section: Section) => void
+}
+
 /**
  * 확정 종가 자동 수집이 잘 돌고 있는지 한 줄로 알린다.
  * 데이터가 갱신되지 않을 때 사용자가 원인을 스스로 알 수 있어야 한다.
@@ -52,15 +61,19 @@ function describeCollection(collection: DataStatus['collection']): string {
   return `자동 수집 정상 · 마지막 ${formatTimestamp(collection.last_run_at)} (${added}) · ${next}`
 }
 
-export function KrMarket() {
+export function KrMarket({ symbol, section, onSelect, onSection }: Props) {
   const [status, setStatus] = useState<DataStatus | null>(null)
   const [stocks, setStocks] = useState<Quote[]>([])
   const [sort, setSort] = useState<SortKey>('market_cap')
   const [market, setMarket] = useState<MarketChoice>('ALL')
   const [keyword, setKeyword] = useState('')
-  const [selected, setSelected] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+
+  // 목록을 받은 뒤 "지금 뭐가 열려 있나"를 봐야 하는데, 그것을 의존성에 넣으면 종목을
+  // 누를 때마다 목록을 다시 받게 된다. 값만 따로 들고 본다.
+  const selectedRef = useRef(symbol)
+  selectedRef.current = symbol
 
   // 데이터 현황을 주기적으로 다시 본다. 자동 수집이 새 거래일을 채우면
   // (평일 13:20 무렵) 화면이 그걸 알아채고 목록까지 새로 불러와야 하기 때문이다.
@@ -102,11 +115,17 @@ export function KrMarket() {
         .then((result) => {
           if (cancelled) return
           setStocks(result)
-          // 목록이 바뀌었는데 선택한 종목이 사라졌으면 첫 종목으로 옮긴다.
-          setSelected((current) => {
-            if (current && result.some((s) => s.symbol === current)) return current
-            return result[0]?.symbol ?? null
-          })
+
+          const current = selectedRef.current
+          const inList = current !== null && result.some((s) => s.symbol === current)
+          // 처음 들어왔거나(주소에 종목이 없다), 검색으로 목록이 통째로 바뀌었는데 그 안에
+          // 없으면 첫 종목을 연다.
+          //
+          // 검색이 아닐 때는 목록 밖 종목이어도 그대로 둔다 — 주소로 링크를 받고 들어온
+          // 종목이 "거래대금 상위 50위 밖"이라는 이유로 다른 회사로 튕기면 안 된다.
+          if (current === null || (trimmed !== '' && !inList)) {
+            onSelect(result[0]?.symbol ?? null)
+          }
         })
         .catch((err: Error) => {
           if (!cancelled) setError(err.message)
@@ -121,16 +140,17 @@ export function KrMarket() {
       clearTimeout(timer)
     }
     // latestTradeDate 가 바뀌면 새 확정 종가가 들어온 것이다. 목록을 다시 받는다.
-  }, [sort, market, keyword, latestTradeDate])
+  }, [sort, market, keyword, latestTradeDate, onSelect])
 
   // 화면에 떠 있는 종목만 현재가를 받는다. 선택한 종목은 목록 밖일 수 있으니 같이 넣는다.
   const watchedSymbols = useMemo(() => {
     const symbols = stocks.map((s) => s.symbol)
-    if (selected && !symbols.includes(selected)) symbols.push(selected)
+    if (symbol && !symbols.includes(symbol)) symbols.push(symbol)
     return symbols
-  }, [stocks, selected])
+  }, [stocks, symbol])
 
   const livePrices = useLivePrices(watchedSymbols)
+  const selectedRow = stocks.find((s) => s.symbol === symbol)
 
   return (
     <div>
@@ -186,19 +206,28 @@ export function KrMarket() {
         </ErrorBox>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_420px]">
+      {/* 상세 기둥을 420px 에서 넓혔다. 동종업계 표가 520px 이라 예전 폭에서는 매출 열이
+          늘 화면 밖으로 잘려 나갔다 — 있는데 안 보이는 상태였다. */}
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_480px] xl:grid-cols-[minmax(0,1fr)_560px]">
         <StockTable
           stocks={stocks}
           live={livePrices.bySymbol}
-          selectedSymbol={selected}
-          onSelect={setSelected}
+          selectedSymbol={symbol}
+          onSelect={onSelect}
         />
-        <aside>
-          {selected && (
+        {/* 상세를 화면에 붙잡아 둔다. 예전에는 목록과 한 몸으로 스크롤해서, 재무를 보려고
+            내리면 목록은 이미 40번째 종목을 지나 있었다 — 다른 종목과 견주려면 매번 맨
+            위로 올라와야 했다. 이제 목록을 끝까지 훑어도 상세는 그 자리에 있고, 상세가
+            화면보다 길면 기둥 안에서만 스크롤한다. */}
+        <aside className="lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:self-start lg:overflow-y-auto lg:pr-1">
+          {symbol && (
             <StockDetailPanel
-              symbol={selected}
-              live={livePrices.bySymbol.get(selected)}
+              symbol={symbol}
+              name={selectedRow?.name}
+              live={livePrices.bySymbol.get(symbol)}
               market={livePrices.market}
+              section={section}
+              onSection={onSection}
             />
           )}
         </aside>

@@ -3,6 +3,7 @@ import { fetchFlows } from '../lib/api'
 import type { FlowMetric, Flows, InvestorDay } from '../lib/api'
 import { changeColor, formatShortDate } from '../lib/format'
 import { Card } from './ui/Card'
+import { Skeleton } from './ui/Skeleton'
 
 // 수급 동향 블록 (국내 전용).
 //
@@ -43,7 +44,7 @@ export function SupplyDemand({ symbol }: Props) {
   return (
     <Card title="수급" hint="투자자별 · 공매도 · 신용 · 대차" bodyClassName="">
       <div className="px-3 py-3">
-        {loading && <p className="text-xs text-neutral-500">불러오는 중…</p>}
+        {loading && <Skeleton rows={5} label="수급을 받는 중…" />}
 
         {!loading && error && (
           <p className="whitespace-pre-line text-xs text-neutral-500">{error}</p>

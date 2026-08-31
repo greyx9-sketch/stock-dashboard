@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { fetchUsAnalysis, runUsAnalysis } from '../lib/api'
 import type { UsAnalysis } from '../lib/api'
 import { Card } from './ui/Card'
+import { Skeleton } from './ui/Skeleton'
 
 // 10-K 서술 분석 블록.
 //
@@ -82,7 +83,7 @@ export function TenKAnalysis({ ticker }: Props) {
     >
 
       <div className="px-3 py-3">
-        {loading && <p className="text-xs text-neutral-500">불러오는 중…</p>}
+        {loading && <Skeleton rows={3} label="분석 결과를 확인하는 중…" />}
 
         {!loading && running && (
           <div className="space-y-1.5 py-2">
