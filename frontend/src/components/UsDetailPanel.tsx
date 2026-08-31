@@ -146,7 +146,11 @@ export function UsDetailPanel({ symbol, listItem, live, market, section, onSecti
         )}
       </Card>
 
+      {/* 화면을 갈아 끼우는 묶음이므로 진짜 탭으로 만든다 — 화살표로 옆으로 이동하고 Enter 로 열린다.
+          화살표만으로 바로 열지 않는 것은 섹션마다 DART·SEC 를 부르기 때문이다. */}
       <Segmented
+        kind="tabs"
+        idPrefix="detail"
         size="md"
         label="상세 섹션"
         options={SECTION_OPTIONS}
@@ -154,111 +158,119 @@ export function UsDetailPanel({ symbol, listItem, live, market, section, onSecti
         onChange={onSection}
       />
 
-      {section === 'overview' && (
-        <>
-          {/* 국내의 개요에는 차트·시세·수급이 들어가는데 미국에는 그만한 시장 자료가 없다.
-              대신 SEC 가 아는 회사 정보를 여기 둔다 — 지금까지는 제목 옆에 업종 한 줄만
-              끼워 넣고 나머지(CIK·결산월·홈페이지)는 화면에 아예 없었다. */}
-          <Card title="기업 정보" hint="SEC 등록 정보" bodyClassName="px-3 py-3">
-            {company ? (
-              <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-                <Field label="업종" value={company.industry ?? '—'} wide />
-                <Field label="거래소" value={company.exchange ?? '—'} />
-                {/* 결산월은 재무를 읽을 때 필요하다. 애플의 2025 회계연도는 9월에 끝난다. */}
-                <Field label="결산" value={formatFiscalEnd(company.fiscal_year_end)} />
-                <Field label="CIK" value={company.cik} />
-                {company.website && (
-                  <div className="col-span-2">
-                    <dt className="text-xs text-neutral-500">홈페이지</dt>
-                    <dd className="truncate">
+      <div
+        role="tabpanel"
+        id={`detail-panel-${section}`}
+        aria-labelledby={`detail-tab-${section}`}
+        tabIndex={-1}
+        className="space-y-4"
+      >
+        {section === 'overview' && (
+          <>
+            {/* 국내의 개요에는 차트·시세·수급이 들어가는데 미국에는 그만한 시장 자료가 없다.
+                대신 SEC 가 아는 회사 정보를 여기 둔다 — 지금까지는 제목 옆에 업종 한 줄만
+                끼워 넣고 나머지(CIK·결산월·홈페이지)는 화면에 아예 없었다. */}
+            <Card title="기업 정보" hint="SEC 등록 정보" bodyClassName="px-3 py-3">
+              {company ? (
+                <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                  <Field label="업종" value={company.industry ?? '—'} wide />
+                  <Field label="거래소" value={company.exchange ?? '—'} />
+                  {/* 결산월은 재무를 읽을 때 필요하다. 애플의 2025 회계연도는 9월에 끝난다. */}
+                  <Field label="결산" value={formatFiscalEnd(company.fiscal_year_end)} />
+                  <Field label="CIK" value={company.cik} />
+                  {company.website && (
+                    <div className="col-span-2">
+                      <dt className="text-xs text-neutral-500">홈페이지</dt>
+                      <dd className="truncate">
+                        <a
+                          href={company.website}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-neutral-300 underline decoration-neutral-700 underline-offset-2 hover:text-neutral-100"
+                        >
+                          {company.website.replace(/^https?:\/\//, '')}
+                        </a>
+                      </dd>
+                    </div>
+                  )}
+                </dl>
+              ) : loading ? (
+                <Skeleton rows={4} label="기업 정보를 받는 중…" />
+              ) : (
+                <Empty
+                  title="SEC 에 등록된 기업 정보가 없습니다."
+                  hint={
+                    hasSecFilings
+                      ? '티커로 회사를 찾지 못했습니다.'
+                      : 'ETF·DR 은 사업회사로 등록되지 않습니다.'
+                  }
+                />
+              )}
+            </Card>
+
+            {/* 국내와 같은 자리 — 개요 맨 아래. 눌러 들어가야 하면 안 쓰게 된다. */}
+            <StockNotes symbol={symbol} />
+          </>
+        )}
+
+        {section === 'finance' && (
+          <>
+            {/* 지표를 재무표 위에 둔다. 국내 화면과 같은 순서다 — PER·PBR 을 먼저 보고
+                그 근거인 추이로 내려간다. */}
+            <UsValuationBox ticker={symbol} />
+
+            {/* 지표 바로 아래. 국내 화면과 같은 순서다 — "이 회사 PER 이 42배"를 보고
+                "업종은 어떤가"로 이어진다. 업종을 모르면 아무것도 그리지 않는다. */}
+            <UsPeerComparison ticker={symbol} />
+
+            {/* 연간/분기 전환은 이 안에 있다. 연간은 위에서 이미 받아 두었으므로 넘겨주고,
+                분기는 처음 누를 때만 따로 받는다. */}
+            <UsFinancialPeriod
+              ticker={symbol}
+              annual={financials}
+              fallback={notes.financials ?? null}
+              loading={loading && financials === null && notes.financials === undefined}
+            />
+          </>
+        )}
+
+        {section === 'filings' && (
+          <>
+            {/* 10-K 를 내는 종목에만 붙인다. ETF·DR 은 애초에 분석할 문서가 없다. */}
+            {hasSecFilings && <TenKAnalysis ticker={symbol} />}
+
+            <Card title="공시" hint="10-K 연차 · 10-Q 분기 · 8-K 수시" bodyClassName="">
+              {filings.length > 0 ? (
+                <ul className="max-h-96 divide-y divide-neutral-800/70 overflow-y-auto">
+                  {filings.map((filing) => (
+                    <li key={filing.accession_no}>
+                      {/* EDGAR 원문으로 나가는 링크다. 외부 사이트이므로 새 탭에서 연다. */}
                       <a
-                        href={company.website}
+                        href={filing.viewer_url}
                         target="_blank"
                         rel="noreferrer"
-                        className="text-neutral-300 underline decoration-neutral-700 underline-offset-2 hover:text-neutral-100"
+                        className="flex items-baseline gap-3 px-3 py-2 text-sm transition-colors hover:bg-neutral-800/60"
                       >
-                        {company.website.replace(/^https?:\/\//, '')}
+                        <span className="tabular shrink-0 text-xs text-neutral-500">
+                          {filing.filing_date.slice(2).replace(/-/g, '.')}
+                        </span>
+                        <span className="w-14 shrink-0 text-neutral-300">{filing.form}</span>
+                        <span className="min-w-0 flex-1 truncate text-xs text-neutral-500">
+                          {filing.report_date ? `기준 ${filing.report_date}` : filing.description}
+                        </span>
                       </a>
-                    </dd>
-                  </div>
-                )}
-              </dl>
-            ) : loading ? (
-              <Skeleton rows={4} label="기업 정보를 받는 중…" />
-            ) : (
-              <Empty
-                title="SEC 에 등록된 기업 정보가 없습니다."
-                hint={
-                  hasSecFilings
-                    ? '티커로 회사를 찾지 못했습니다.'
-                    : 'ETF·DR 은 사업회사로 등록되지 않습니다.'
-                }
-              />
-            )}
-          </Card>
-
-          {/* 국내와 같은 자리 — 개요 맨 아래. 눌러 들어가야 하면 안 쓰게 된다. */}
-          <StockNotes symbol={symbol} />
-        </>
-      )}
-
-      {section === 'finance' && (
-        <>
-          {/* 지표를 재무표 위에 둔다. 국내 화면과 같은 순서다 — PER·PBR 을 먼저 보고
-              그 근거인 추이로 내려간다. */}
-          <UsValuationBox ticker={symbol} />
-
-          {/* 지표 바로 아래. 국내 화면과 같은 순서다 — "이 회사 PER 이 42배"를 보고
-              "업종은 어떤가"로 이어진다. 업종을 모르면 아무것도 그리지 않는다. */}
-          <UsPeerComparison ticker={symbol} />
-
-          {/* 연간/분기 전환은 이 안에 있다. 연간은 위에서 이미 받아 두었으므로 넘겨주고,
-              분기는 처음 누를 때만 따로 받는다. */}
-          <UsFinancialPeriod
-            ticker={symbol}
-            annual={financials}
-            fallback={notes.financials ?? null}
-            loading={loading && financials === null && notes.financials === undefined}
-          />
-        </>
-      )}
-
-      {section === 'filings' && (
-        <>
-          {/* 10-K 를 내는 종목에만 붙인다. ETF·DR 은 애초에 분석할 문서가 없다. */}
-          {hasSecFilings && <TenKAnalysis ticker={symbol} />}
-
-          <Card title="공시" hint="10-K 연차 · 10-Q 분기 · 8-K 수시" bodyClassName="">
-            {filings.length > 0 ? (
-              <ul className="max-h-96 divide-y divide-neutral-800/70 overflow-y-auto">
-                {filings.map((filing) => (
-                  <li key={filing.accession_no}>
-                    {/* EDGAR 원문으로 나가는 링크다. 외부 사이트이므로 새 탭에서 연다. */}
-                    <a
-                      href={filing.viewer_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="flex items-baseline gap-3 px-3 py-2 text-sm transition-colors hover:bg-neutral-800/60"
-                    >
-                      <span className="tabular shrink-0 text-xs text-neutral-500">
-                        {filing.filing_date.slice(2).replace(/-/g, '.')}
-                      </span>
-                      <span className="w-14 shrink-0 text-neutral-300">{filing.form}</span>
-                      <span className="min-w-0 flex-1 truncate text-xs text-neutral-500">
-                        {filing.report_date ? `기준 ${filing.report_date}` : filing.description}
-                      </span>
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            ) : loading ? (
-              <Skeleton rows={6} label="공시를 받는 중…" className="px-3 py-3" />
-            ) : (
-              <Empty title={notes.filings ?? '표시할 공시가 없습니다.'} className="px-3 py-3" />
-            )}
-          </Card>
-        </>
-      )}
+                    </li>
+                  ))}
+                </ul>
+              ) : loading ? (
+                <Skeleton rows={6} label="공시를 받는 중…" className="px-3 py-3" />
+              ) : (
+                <Empty title={notes.filings ?? '표시할 공시가 없습니다.'} className="px-3 py-3" />
+              )}
+            </Card>
+          </>
+        )}
+      </div>
     </div>
   )
 }

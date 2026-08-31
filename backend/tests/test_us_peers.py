@@ -20,6 +20,7 @@ import pytest
 from app.models.base import get_session, init_db
 from app.models.us_company import SecCompany, SecFinancial
 from app.services import sec_companies, us_universe, valuation
+from tests.conftest import run_async
 
 
 @pytest.fixture(autouse=True)
@@ -228,8 +229,6 @@ def test_peers_are_empty_when_the_subject_has_no_metrics(monkeypatch):
     **SEC 를 부르지 않는다.** 재무를 채우는 부분은 여기서 확인할 것이 아니고,
     테스트가 네트워크를 타면 결과가 그날 사정에 따라 달라진다.
     """
-    import asyncio
-
     from app.routers import us_stocks
 
     async def _no_fetch(*args, **kwargs):
@@ -248,5 +247,5 @@ def test_peers_are_empty_when_the_subject_has_no_metrics(monkeypatch):
     if hasattr(sec_companies.get_company, "cache_clear"):
         sec_companies.get_company.cache_clear()
 
-    got = asyncio.run(us_stocks.get_us_peers(ticker="KO", limit=5))
+    got = run_async(us_stocks.get_us_peers(ticker="KO", limit=5))
     assert got.rows == []

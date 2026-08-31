@@ -90,3 +90,30 @@ body {
 .tabular {
   font-variant-numeric: tabular-nums;
 }
+
+/* ── 포커스 ──────────────────────────────────────────────────────────
+   키보드로 쓰는 사람에게 "지금 여기"를 보여준다.
+
+   이 파일에 focus 규칙이 한 줄도 없었다. 게다가 입력칸 일곱 곳은 `outline-none` 으로
+   브라우저 기본 표시마저 지운 뒤 테두리 색만 한 단 바꿔 놓아서, 키보드로 쓰면 지금
+   어디에 있는지 알 수가 없었다. 1단계에서 표를 키보드로 열어 놨는데 정작 포커스가
+   보이지 않으니 반쪽이었다.
+
+   `:focus-visible` 을 쓴다. 마우스로 눌렀을 때는 링이 안 뜨고 키보드로 옮겼을 때만
+   뜬다 — 마우스로 쓰는 화면은 지금과 똑같이 남는다.
+
+   색은 무채색(--color-ring)이다. 파랑은 하락, 초록은 미국식 상승과 겹쳐서 시세 숫자
+   옆에 뜨면 방향으로 오독된다. 이 화면에서 색은 이미 뜻을 갖고 있다. */
+:focus-visible {
+  outline: 2px solid var(--color-ring);
+  outline-offset: 2px;
+}
+
+/* 표의 행과 카드 안에 꽉 찬 것들은 링을 바깥에 그리면 옆 칸이나 카드 테두리에 가려
+   잘린다. 안쪽에 그린다. */
+tr:focus-visible,
+textarea:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline-offset: -2px;
+}

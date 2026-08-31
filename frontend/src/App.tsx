@@ -6,6 +6,7 @@ import { Screener } from './pages/Screener'
 import { MacroStrip } from './components/MacroStrip'
 import { UpcomingEvents } from './components/UpcomingEvents'
 import { SystemBanner } from './components/SystemBanner'
+import { Segmented } from './components/ui/Segmented'
 import { useRoute, type Tab } from './lib/useRoute'
 
 // 화면 전체의 껍데기. 어느 화면을 보고 있는지는 **주소가 들고 있다**(`lib/useRoute`).
@@ -17,13 +18,13 @@ import { useRoute, type Tab } from './lib/useRoute'
 
 // 관심종목은 두 시장을 섞어 담으므로 국내·미국과 나란히 놓인 세 번째 탭이다.
 // 일정은 시장을 가리지 않는 것(금통위·FOMC·만기)이 대부분이라 맨 뒤에 둔다.
-const TABS: { key: Tab; label: string }[] = [
-  { key: 'kr', label: '국내' },
-  { key: 'us', label: '미국' },
-  { key: 'watch', label: '관심' },
-  { key: 'screen', label: '분석' },
-  { key: 'calendar', label: '일정' },
-]
+const TABS = [
+  { value: 'kr', label: '국내' },
+  { value: 'us', label: '미국' },
+  { value: 'watch', label: '관심' },
+  { value: 'screen', label: '분석' },
+  { value: 'calendar', label: '일정' },
+] as const satisfies readonly { value: Tab; label: string }[]
 
 export default function App() {
   const { route, setTab, setSymbol, setSection } = useRoute()
@@ -50,29 +51,35 @@ export default function App() {
       <div className="mx-auto max-w-7xl px-4 py-6 xl:max-w-[1440px]">
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <h1 className="text-2xl font-semibold">주식 시세</h1>
-        <div className="flex gap-1 rounded-md bg-neutral-900 p-0.5">
-          {TABS.map((item) => (
-            <button
-              key={item.key}
-              onClick={() => setTab(item.key)}
-              className={`rounded px-3 py-1 text-sm transition-colors ${
-                tab === item.key
-                  ? 'bg-neutral-100 text-neutral-900'
-                  : 'text-neutral-400 hover:text-neutral-200'
-              }`}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
+        {/* 지금까지는 그냥 <button> 다섯 개였다. 스크린리더에는 "화면을 고르는 곳"이라는
+            것이 전달되지 않았고, 키보드로는 Tab 을 다섯 번 눌러 지나가야 했다.
+            묶음 전체가 탭 정지 하나가 되고 ←→ 로 옮긴다. */}
+        <Segmented
+          kind="tabs"
+          idPrefix="market"
+          size="md"
+          label="화면"
+          options={TABS}
+          value={tab}
+          onChange={setTab}
+          className="rounded-md bg-neutral-900 p-0.5"
+        />
       </div>
 
-      {/* key 를 주어 탭을 바꿀 때 이전 화면의 상태가 남지 않게 한다. */}
-      {tab === 'kr' && <KrMarket key="kr" {...detail} />}
-      {tab === 'us' && <UsMarket key="us" {...detail} />}
-      {tab === 'watch' && <Watchlist key="watch" {...detail} />}
-      {tab === 'screen' && <Screener key="screen" />}
-      {tab === 'calendar' && <Calendar key="calendar" />}
+      {/* key 를 주어 탭을 바꿀 때 이전 화면의 상태가 남지 않게 한다.
+          id 는 위 탭이 aria-controls 로 가리키는 짝이다. */}
+      <div
+        role="tabpanel"
+        id={`market-panel-${tab}`}
+        aria-labelledby={`market-tab-${tab}`}
+        tabIndex={-1}
+      >
+        {tab === 'kr' && <KrMarket key="kr" {...detail} />}
+        {tab === 'us' && <UsMarket key="us" {...detail} />}
+        {tab === 'watch' && <Watchlist key="watch" {...detail} />}
+        {tab === 'screen' && <Screener key="screen" />}
+        {tab === 'calendar' && <Calendar key="calendar" />}
+      </div>
       </div>
     </>
   )

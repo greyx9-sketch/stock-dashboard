@@ -73,6 +73,27 @@ function RetryButton({ onClick, label }: { onClick: () => void; label: string })
   )
 }
 
+/**
+ * 화면이 바뀌었다는 것을 소리로만 알린다. 눈에는 보이지 않는다.
+ *
+ * 목록은 눈으로 보면 바뀐 것이 대번에 보이지만, 화면을 읽어 주는 프로그램을 쓰면
+ * **아무 일도 안 일어난 것과 구분되지 않는다.** 검색어를 넣어도, 시장 필터를 눌러도
+ * 아무 말이 없었다. 몇 건이 나왔는지 알려면 표를 처음부터 다시 훑어야 했다.
+ *
+ * `role="status"` 는 읽던 것을 끊지 않고 사이에 끼워 읽는다(polite). 시세처럼 계속
+ * 바뀌는 값에 쓰면 말이 끊이지 않으므로 **사용자가 뭔가를 눌러서 목록이 바뀐 때만** 쓴다.
+ *
+ * 이 상자는 항상 화면에 있어야 한다 — 없다가 생기면 그 변화를 못 알아채는 브라우저가
+ * 있다. 그래서 받는 중일 때는 빈 문자열을 넘긴다.
+ */
+export function Announce({ children }: { children: ReactNode }) {
+  return (
+    <p role="status" className="sr-only">
+      {children}
+    </p>
+  )
+}
+
 /** 비어 있음. 실패가 아니다 — 조건에 맞는 것이 없거나 아직 자료가 없는 경우다. */
 export function Empty({
   title,

@@ -188,7 +188,7 @@ export function Watchlist({ symbol, section, onSelect, onSection }: Props) {
           value={input}
           onChange={(event) => setInput(event.target.value)}
           placeholder="코드로 담기 (005930 / AAPL)"
-          className="w-56 rounded-md border border-neutral-800 bg-neutral-900 px-3 py-1.5 text-sm placeholder:text-neutral-600 focus:border-neutral-600 focus:outline-none"
+          className="w-56 rounded-md border border-neutral-800 bg-neutral-900 px-3 py-1.5 text-sm placeholder:text-neutral-600 focus:border-neutral-600"
         />
         <button
           type="submit"

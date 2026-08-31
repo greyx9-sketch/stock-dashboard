@@ -16,6 +16,7 @@ import asyncio
 import os
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 import httpx
@@ -28,7 +29,7 @@ if sys.platform == "win32":
 
 # ---------------------------------------------------------------- 이벤트 루프 하나만
 #
-# **이 개발 PC 에서는 이벤트 루프를 12개째 만들 때 실패한다.**
+# **이 개발 PC 에서는 이벤트 루프를 만드는 것이 가끔 실패한다.**
 #
 #     OSError: [WinError 10014] ... 잘못된 포인터 주소를 감지했습니다
 #     (asyncio 가 루프마다 만드는 self-pipe 소켓의 listen() 에서 난다)
@@ -37,17 +38,50 @@ if sys.platform == "win32":
 # 실제로 이것 때문에 테스트가 오랫동안 간헐적으로 깨졌다 — 매번 다른 테스트가, 본문이 빈
 # 500 으로. 원인을 모른 채로 "또 그거겠지" 하고 넘기게 되는 종류의 실패다.
 #
-# 그래서 **세션 전체가 루프 하나를 나눠 쓴다.** 비동기 코드를 부를 일이 있으면
-# `asyncio.run()` 대신 `run_async()` 를 쓴다.
+# 막는 방법이 둘이고 **둘 다 필요하다.**
+#   1. 적게 만든다 — 세션 전체가 루프 하나를 나눠 쓴다. 비동기 코드를 부를 일이 있으면
+#      `asyncio.run()` 대신 `run_async()` 를 쓴다. (`asyncio.run()` 은 부를 때마다
+#      루프를 새로 만든다. 세 곳이 그러고 있었고 340개 중 절반 가까운 확률로 깨졌다.)
+#   2. 실패하면 다시 만든다 — 아래 `_new_loop()`. 한 번만 만들어도 그 한 번이 실패한다.
 
 _LOOP: asyncio.AbstractEventLoop | None = None
+
+
+def _new_loop(attempts: int = 5) -> asyncio.AbstractEventLoop:
+    """이벤트 루프를 만든다. 실패하면 잠깐 쉬었다 다시 해 본다.
+
+    **루프를 하나만 쓰기로 해 놓고도 테스트가 열 번에 한 번쯤 깨지고 있었다.** 이유는
+    개수가 아니라 **만드는 행위 자체**였다 — 딱 한 번 만드는데 그 한 번이 가끔 실패한다.
+
+        OSError: [WinError 10014] 잘못된 포인터 주소를 감지했습니다
+        AttributeError: '_WindowsSelectorEventLoop' object has no attribute '_ssock'
+
+    asyncio 는 루프마다 자기를 깨우는 소켓 한 쌍(self-pipe)을 만드는데, 백신·방화벽이
+    루프백 소켓 생성에 끼어들면 그 자리에서 터진다. 우리 코드로 막을 수 없고, 실패는
+    **그때 돌던 아무 테스트**에 붙어서 나타난다 — 매번 다른 테스트가 깨지니 원인을
+    짚기가 어렵고 "또 그거겠지" 하고 넘기게 된다.
+
+    끼어드는 것은 순간적이라 조금 쉬었다 다시 만들면 된다. 다섯 번 다 실패하면
+    그때는 진짜 문제이므로 그대로 터뜨린다.
+    """
+    last: BaseException | None = None
+    for _ in range(attempts):
+        try:
+            return asyncio.new_event_loop()
+        except (OSError, AttributeError) as err:  # noqa: PERF203
+            last = err
+            time.sleep(0.05)
+    raise RuntimeError(
+        "이벤트 루프를 만들지 못했습니다. 백신·방화벽이 루프백 소켓을 막고 있는지 "
+        "확인하세요."
+    ) from last
 
 
 def get_loop() -> asyncio.AbstractEventLoop:
     """세션이 공유하는 이벤트 루프. 없으면 그때 하나 만든다."""
     global _LOOP
     if _LOOP is None or _LOOP.is_closed():
-        _LOOP = asyncio.new_event_loop()
+        _LOOP = _new_loop()
     return _LOOP
 
 

@@ -92,14 +92,14 @@ export function StockNotes({ symbol }: Props) {
             }}
             rows={3}
             placeholder="지금 무슨 생각인지 적어 둔다. 나중에 이 판단이 맞았는지 보게 된다."
-            className="w-full resize-y rounded-md border border-neutral-800 bg-neutral-900 px-2.5 py-2 text-sm placeholder:text-neutral-600 focus:border-neutral-600 focus:outline-none"
+            className="w-full resize-y rounded-md border border-neutral-800 bg-neutral-900 px-2.5 py-2 text-sm placeholder:text-neutral-600 focus:border-neutral-600"
           />
           <div className="flex flex-wrap items-center gap-2">
             <input
               value={tags}
               onChange={(event) => setTags(event.target.value)}
               placeholder="태그 (쉼표로 구분)"
-              className="w-44 rounded-md border border-neutral-800 bg-neutral-900 px-2 py-1 text-xs placeholder:text-neutral-600 focus:border-neutral-600 focus:outline-none"
+              className="w-44 rounded-md border border-neutral-800 bg-neutral-900 px-2 py-1 text-xs placeholder:text-neutral-600 focus:border-neutral-600"
             />
             <button
               onClick={save}
@@ -176,13 +176,13 @@ function NoteRow({ note, onChanged }: { note: Note; onChanged: () => void }) {
           value={body}
           onChange={(event) => setBody(event.target.value)}
           rows={3}
-          className="w-full resize-y rounded-md border border-neutral-700 bg-neutral-900 px-2.5 py-2 text-sm focus:border-neutral-500 focus:outline-none"
+          className="w-full resize-y rounded-md border border-neutral-700 bg-neutral-900 px-2.5 py-2 text-sm focus:border-neutral-500"
         />
         <input
           value={tags}
           onChange={(event) => setTags(event.target.value)}
           placeholder="태그 (쉼표로 구분)"
-          className="w-44 rounded-md border border-neutral-800 bg-neutral-900 px-2 py-1 text-xs placeholder:text-neutral-600 focus:outline-none"
+          className="w-44 rounded-md border border-neutral-800 bg-neutral-900 px-2 py-1 text-xs placeholder:text-neutral-600"
         />
         <div className="flex gap-2 text-xs">
           <button onClick={commit} disabled={busy} className="text-neutral-200 hover:text-white">

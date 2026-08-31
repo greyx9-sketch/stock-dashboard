@@ -15,13 +15,12 @@
 
 from __future__ import annotations
 
-import asyncio
-
 import pytest
 
 from app.models.base import get_session, init_db
 from app.models.watchlist import WatchlistItem
 from app.services import auto_analysis
+from tests.conftest import run_async
 
 
 @pytest.fixture(autouse=True)
@@ -64,7 +63,7 @@ def _run(monkeypatch, spy, *, calls_today: int = 0, limit: int = 20):
     monkeypatch.setattr(
         auto_analysis, "get_settings", lambda: type("S", (), {"analysis_daily_limit": limit})()
     )
-    return asyncio.run(auto_analysis.run())
+    return run_async(auto_analysis.run())
 
 
 # ---------------------------------------------------------------- 예산 울타리
@@ -183,5 +182,5 @@ def test_korean_and_us_symbols_go_to_different_analysers(monkeypatch):
     )
 
     _watch("005930", "AAPL")
-    asyncio.run(auto_analysis.run())
+    run_async(auto_analysis.run())
     assert seen == [("KR", "005930"), ("US", "AAPL")]

@@ -6,7 +6,7 @@ import { useLivePrices } from '../lib/useLivePrices'
 import { UsTable } from '../components/UsTable'
 import { UsDetailPanel } from '../components/UsDetailPanel'
 import { MarketBadge } from '../components/MarketBadge'
-import { ErrorBox } from '../components/ui/Status'
+import { Announce, ErrorBox } from '../components/ui/Status'
 
 // 미국 시장 화면.
 //
@@ -101,6 +101,14 @@ export function UsMarket({ symbol, section, onSelect, onSection }: Props) {
   const livePrices = useLivePrices(watchedSymbols, 'US')
   const selectedItem = stocks.find((s) => s.symbol === symbol)
 
+  // 국내 화면과 같은 규칙 — 목록이 바뀜 것을 소리로 알린다.
+  const trimmedKeyword = keyword.trim()
+  const listSummary = loading
+    ? ''
+    : trimmedKeyword !== ''
+      ? `“${trimmedKeyword}” 검색 결과 ${stocks.length}건`
+      : `거래대금 상위 ${stocks.length}종목`
+
   return (
     <div>
       <header className="mb-6">
@@ -119,10 +127,12 @@ export function UsMarket({ symbol, section, onSelect, onSection }: Props) {
           value={keyword}
           onChange={(event) => setKeyword(event.target.value)}
           placeholder="티커 또는 회사명 검색 (예: AAPL, Apple)"
-          className="w-72 rounded-md border border-neutral-800 bg-neutral-900 px-3 py-1.5 text-sm placeholder:text-neutral-600 focus:border-neutral-600 focus:outline-none"
+          className="w-72 rounded-md border border-neutral-800 bg-neutral-900 px-3 py-1.5 text-sm placeholder:text-neutral-600 focus:border-neutral-600"
         />
         {loading && <span className="text-xs text-neutral-500">불러오는 중…</span>}
       </div>
+
+      <Announce>{listSummary}</Announce>
 
       {error && (
         <ErrorBox tone="block" className="mb-4">

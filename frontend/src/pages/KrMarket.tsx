@@ -8,7 +8,7 @@ import { StockTable } from '../components/StockTable'
 import { StockDetailPanel } from '../components/StockDetailPanel'
 import { MarketBadge } from '../components/MarketBadge'
 import { Segmented } from '../components/ui/Segmented'
-import { ErrorBox, Loading } from '../components/ui/Status'
+import { Announce, ErrorBox, Loading } from '../components/ui/Status'
 
 const SORT_OPTIONS = [
   { value: 'market_cap', label: '시가총액' },
@@ -152,6 +152,16 @@ export function KrMarket({ symbol, section, onSelect, onSection }: Props) {
   const livePrices = useLivePrices(watchedSymbols)
   const selectedRow = stocks.find((s) => s.symbol === symbol)
 
+  // 목록이 바뀜 것을 소리로 알린다. 받는 중에는 비워 둔다 — 중간에 한 번 더
+  // 말하게 하지 않고 결과만 한 번 말하게 하려는 것이다.
+  const trimmedKeyword = keyword.trim()
+  const listSummary = loading
+    ? ''
+    : trimmedKeyword !== ''
+      ? `“${trimmedKeyword}” 검색 결과 ${stocks.length}건`
+      : `${SORT_OPTIONS.find((o) => o.value === sort)?.label} 순 · ` +
+        `${MARKET_OPTIONS.find((o) => o.value === market)?.label} · ${stocks.length}종목`
+
   return (
     <div>
       <header className="mb-6">
@@ -175,7 +185,7 @@ export function KrMarket({ symbol, section, onSelect, onSection }: Props) {
           value={keyword}
           onChange={(event) => setKeyword(event.target.value)}
           placeholder="종목명 또는 코드 검색"
-          className="w-56 rounded-md border border-neutral-800 bg-neutral-900 px-3 py-1.5 text-sm placeholder:text-neutral-600 focus:border-neutral-600 focus:outline-none"
+          className="w-56 rounded-md border border-neutral-800 bg-neutral-900 px-3 py-1.5 text-sm placeholder:text-neutral-600 focus:border-neutral-600"
         />
 
         {keyword.trim() === '' && (
@@ -199,6 +209,8 @@ export function KrMarket({ symbol, section, onSelect, onSection }: Props) {
 
         {loading && <Loading label="불러오는 중…" />}
       </div>
+
+      <Announce>{listSummary}</Announce>
 
       {error && (
         <ErrorBox tone="block" className="mb-4">

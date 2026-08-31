@@ -168,7 +168,11 @@ export function StockDetailPanel({ symbol, name, live, market, section, onSectio
         </Card>
       </div>
 
+      {/* 화면을 갈아 끼우는 묶음이므로 진짜 탭으로 만든다 — 화살표로 옆으로 이동하고 Enter 로 열린다.
+          화살표만으로 바로 열지 않는 것은 섹션마다 DART·SEC 를 부르기 때문이다. */}
       <Segmented
+        kind="tabs"
+        idPrefix="detail"
         size="md"
         label="상세 섹션"
         options={SECTION_OPTIONS}
@@ -176,60 +180,68 @@ export function StockDetailPanel({ symbol, name, live, market, section, onSectio
         onChange={onSection}
       />
 
-      {/* 섹션 안의 카드만 자기 자료를 받는다. 열한 개가 한꺼번에 움직이지 않는다. */}
-      {section === 'overview' && (
-        <>
-          <PriceChart points={points} loading={latest === null} />
+      <div
+        role="tabpanel"
+        id={`detail-panel-${section}`}
+        aria-labelledby={`detail-tab-${section}`}
+        tabIndex={-1}
+        className="space-y-4"
+      >
+        {/* 섹션 안의 카드만 자기 자료를 받는다. 열한 개가 한꺼번에 움직이지 않는다. */}
+        {section === 'overview' && (
+          <>
+            <PriceChart points={points} loading={latest === null} />
 
-          <Card
-            title="시세"
-            hint={latest?.trade_date}
-            bodyClassName="px-3 py-3"
-          >
-            {latest ? (
-              <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-3">
-                <Field label="시가" value={`${formatWon(latest.open)}원`} />
-                <Field label="고가" value={`${formatWon(latest.high)}원`} />
-                <Field label="저가" value={`${formatWon(latest.low)}원`} />
-                <Field label="거래량" value={`${formatVolume(latest.volume)}주`} />
-                <Field label="거래대금" value={`${formatBigWon(latest.trade_value)}원`} />
-                <Field label="시가총액" value={`${formatBigWon(latest.market_cap)}원`} />
-              </dl>
-            ) : (
-              <Skeleton rows={4} label="시세를 받는 중…" />
-            )}
-          </Card>
+            <Card
+              title="시세"
+              hint={latest?.trade_date}
+              bodyClassName="px-3 py-3"
+            >
+              {latest ? (
+                <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-3">
+                  <Field label="시가" value={`${formatWon(latest.open)}원`} />
+                  <Field label="고가" value={`${formatWon(latest.high)}원`} />
+                  <Field label="저가" value={`${formatWon(latest.low)}원`} />
+                  <Field label="거래량" value={`${formatVolume(latest.volume)}주`} />
+                  <Field label="거래대금" value={`${formatBigWon(latest.trade_value)}원`} />
+                  <Field label="시가총액" value={`${formatBigWon(latest.market_cap)}원`} />
+                </dl>
+              ) : (
+                <Skeleton rows={4} label="시세를 받는 중…" />
+              )}
+            </Card>
 
-          {/* 수급은 시세 옆에 둔다 — 거래량·거래대금과 같은 시장 자료라서 재무보다 위가 자연스럽다. */}
-          <SupplyDemand symbol={symbol} />
+            {/* 수급은 시세 옆에 둔다 — 거래량·거래대금과 같은 시장 자료라서 재무보다 위가 자연스럽다. */}
+            <SupplyDemand symbol={symbol} />
 
-          {/* 메모는 개요에 둔다. 재무나 공시 뒤로 밀면 눌러 들어가야 해서 안 쓰게 된다. */}
-          <StockNotes symbol={symbol} />
-        </>
-      )}
+            {/* 메모는 개요에 둔다. 재무나 공시 뒤로 밀면 눌러 들어가야 해서 안 쓰게 된다. */}
+            <StockNotes symbol={symbol} />
+          </>
+        )}
 
-      {section === 'finance' && (
-        <>
-          {/* 지표를 재무표 위에 둔다. PER·PBR 을 먼저 보고 그 근거인 추이로 내려가는
-              순서가 자연스럽다. */}
-          <ValuationBox symbol={symbol} />
+        {section === 'finance' && (
+          <>
+            {/* 지표를 재무표 위에 둔다. PER·PBR 을 먼저 보고 그 근거인 추이로 내려가는
+                순서가 자연스럽다. */}
+            <ValuationBox symbol={symbol} />
 
-          {/* 지표 바로 아래. "이 회사 PER 이 32배"를 보고 나서 "업종은 어떤가"로
-              이어지는 순서다. 업종을 모르는 종목에서는 아무것도 그리지 않는다. */}
-          <PeerComparison symbol={symbol} />
+            {/* 지표 바로 아래. "이 회사 PER 이 32배"를 보고 나서 "업종은 어떤가"로
+                이어지는 순서다. 업종을 모르는 종목에서는 아무것도 그리지 않는다. */}
+            <PeerComparison symbol={symbol} />
 
-          <FinancialSummary symbol={symbol} />
-        </>
-      )}
+            <FinancialSummary symbol={symbol} />
+          </>
+        )}
 
-      {section === 'filings' && (
-        <>
-          {/* 미국 화면과 같은 순서 — 분석이 먼저, 원문 목록이 뒤. */}
-          <ReportAnalysis symbol={symbol} />
+        {section === 'filings' && (
+          <>
+            {/* 미국 화면과 같은 순서 — 분석이 먼저, 원문 목록이 뒤. */}
+            <ReportAnalysis symbol={symbol} />
 
-          <DisclosureList symbol={symbol} />
-        </>
-      )}
+            <DisclosureList symbol={symbol} />
+          </>
+        )}
+      </div>
     </div>
   )
 }
