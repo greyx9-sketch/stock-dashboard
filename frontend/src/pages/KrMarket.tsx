@@ -8,6 +8,7 @@ import { StockTable } from '../components/StockTable'
 import { StockDetailPanel } from '../components/StockDetailPanel'
 import { MarketBadge } from '../components/MarketBadge'
 import { Segmented } from '../components/ui/Segmented'
+import { SplitView } from '../components/ui/SplitView'
 import { Announce, ErrorBox, Loading } from '../components/ui/Status'
 
 const SORT_OPTIONS = [
@@ -152,6 +153,17 @@ export function KrMarket({ symbol, section, onSelect, onSection }: Props) {
   const livePrices = useLivePrices(watchedSymbols)
   const selectedRow = stocks.find((s) => s.symbol === symbol)
 
+  // 좁은 화면에서 목록·상세 중 무엇을 보여 줄지. 주소에 종목이 적혀 있으면(링크를
+  // 받고 들어온 경우) 상세로 시작하고, 그렇지 않으면 목록부터 보여준다.
+  const [view, setView] = useState<'list' | 'detail'>(symbol ? 'detail' : 'list')
+
+  // 목록이 처음 뜨면서 첫 종목을 자동으로 여는 것은 "눌렀다"가 아니다. 그것까지
+  // 상세로 치면 휴대폰에서 앱을 열자마자 상세로 튕긴다. 사용자가 누른 길만 이것을 쓴다.
+  const open = (next: string | null) => {
+    onSelect(next)
+    if (next) setView('detail')
+  }
+
   // 목록이 바뀜 것을 소리로 알린다. 받는 중에는 비워 둔다 — 중간에 한 번 더
   // 말하게 하지 않고 결과만 한 번 말하게 하려는 것이다.
   const trimmedKeyword = keyword.trim()
@@ -180,7 +192,13 @@ export function KrMarket({ symbol, section, onSelect, onSection }: Props) {
         </p>
       </header>
 
-      <div className="mb-4 flex flex-wrap items-center gap-2">
+      {/* 좁은 화면에서 상세를 보는 중이면 도구줄을 감춘다. 검색·정렬·시장은 목록에 따라붙는
+          것이라, 상세만 보이는 화면 위에 남아 있으면 한 화면분을 그냥 잡아먹는다. */}
+      <div
+        className={`mb-4 flex-wrap items-center gap-2 ${
+          view === 'detail' ? 'hidden lg:flex' : 'flex'
+        }`}
+      >
         <input
           value={keyword}
           onChange={(event) => setKeyword(event.target.value)}
@@ -219,20 +237,25 @@ export function KrMarket({ symbol, section, onSelect, onSection }: Props) {
       )}
 
       {/* 상세 기둥을 420px 에서 넓혔다. 동종업계 표가 520px 이라 예전 폭에서는 매출 열이
-          늘 화면 밖으로 잘려 나갔다 — 있는데 안 보이는 상태였다. */}
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_480px] xl:grid-cols-[minmax(0,1fr)_560px]">
-        <StockTable
-          stocks={stocks}
-          live={livePrices.bySymbol}
-          selectedSymbol={symbol}
-          onSelect={onSelect}
-        />
-        {/* 상세를 화면에 붙잡아 둔다. 예전에는 목록과 한 몸으로 스크롤해서, 재무를 보려고
-            내리면 목록은 이미 40번째 종목을 지나 있었다 — 다른 종목과 견주려면 매번 맨
-            위로 올라와야 했다. 이제 목록을 끝까지 훑어도 상세는 그 자리에 있고, 상세가
-            화면보다 길면 기둥 안에서만 스크롤한다. */}
-        <aside className="lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:self-start lg:overflow-y-auto lg:pr-1">
-          {symbol && (
+          늘 화면 밖으로 잘려 나갔다 — 있는데 안 보이는 상태였다.
+          좁은 화면에서 목록·상세를 갈라 보여주는 것은 `SplitView` 가 맡는다. */}
+      <SplitView
+        // 종목이 없으면 보여 줄 상세도 없다. 뒤로가기로 주소에서 종목이 빠졌을 때
+        // 빈 상세가 남아 있지 않게 한다.
+        view={symbol ? view : 'list'}
+        onBack={() => setView('list')}
+        backLabel="종목 목록으로"
+        className="gap-6 lg:grid-cols-[minmax(0,1fr)_480px] xl:grid-cols-[minmax(0,1fr)_560px]"
+        list={
+          <StockTable
+            stocks={stocks}
+            live={livePrices.bySymbol}
+            selectedSymbol={symbol}
+            onSelect={open}
+          />
+        }
+        detail={
+          symbol && (
             <StockDetailPanel
               symbol={symbol}
               name={selectedRow?.name}
@@ -241,9 +264,9 @@ export function KrMarket({ symbol, section, onSelect, onSection }: Props) {
               section={section}
               onSection={onSection}
             />
-          )}
-        </aside>
-      </div>
+          )
+        }
+      />
 
       {status && (
         <footer className="mt-8 border-t border-neutral-800 pt-4 text-xs text-neutral-500">

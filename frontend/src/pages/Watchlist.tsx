@@ -17,6 +17,7 @@ import { UsDetailPanel } from '../components/UsDetailPanel'
 import { ErrorBox } from '../components/ui/Status'
 import { DataTable, type Column } from '../components/ui/DataTable'
 import { Card } from '../components/ui/Card'
+import { SplitView } from '../components/ui/SplitView'
 
 // 관심종목 탭. 기획서 5.1 의 관심종목 그리드다.
 //
@@ -59,6 +60,14 @@ export function Watchlist({ symbol, section, onSelect, onSection }: Props) {
 
   const selectedItem = items.find((i) => i.symbol === symbol) ?? null
 
+  // 좁은 화면에서 목록·상세 중 무엇을 보여 줄지. 국내·미국 탭과 같은 규칙이다.
+  const [view, setView] = useState<'list' | 'detail'>(symbol ? 'detail' : 'list')
+
+  const open = (next: string | null) => {
+    onSelect(next)
+    if (next) setView('detail')
+  }
+
   const columns: Column<WatchItem>[] = [
     {
       key: 'name',
@@ -69,7 +78,8 @@ export function Watchlist({ symbol, section, onSelect, onSection }: Props) {
             {item.market === 'KR' ? '국내' : '미국'}
           </span>
           <span>{item.name}</span>
-          <span className="tabular text-xs text-neutral-500">{item.symbol}</span>
+          {/* 국내 목록과 같은 이유로 휴대폰에서는 코드를 감춘다. */}
+          <span className="tabular hidden text-xs text-neutral-500 sm:inline">{item.symbol}</span>
         </div>
       ),
     },
@@ -105,6 +115,8 @@ export function Watchlist({ symbol, section, onSelect, onSection }: Props) {
       key: 'base_date',
       header: '기준',
       align: 'right',
+      // 휴대폰에서는 감춘다. 순서 바꾸기(↑↓✕)는 좁은 화면에서도 써야 해서 남긴다.
+      hideBelow: 'sm',
       cellClassName: 'text-xs text-neutral-600',
       render: (item) => (item.base_date ? formatShortDate(item.base_date) : '—'),
     },
@@ -219,20 +231,26 @@ export function Watchlist({ symbol, section, onSelect, onSection }: Props) {
           </p>
         </Card>
       ) : (
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_480px] xl:grid-cols-[minmax(0,1fr)_560px]">
-          <DataTable
-            caption="관심종목 목록"
-            rows={items}
-            columns={columns}
-            rowKey={(item) => item.symbol}
-            selectedKey={symbol}
-            onSelect={onSelect}
-            minWidth="min-w-[560px]"
-          />
-
-          {/* 국내·미국 탭과 같은 규칙 — 상세를 화면에 붙잡아 둔다. */}
-          <aside className="lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:self-start lg:overflow-y-auto lg:pr-1">
-            {selectedItem === null ? (
+        // 국내·미국 탭과 같은 규칙 — 상세를 붙잡아 두고, 좁은 화면에서는 둘 중 하나만 보여준다.
+        <SplitView
+          // 국내·미국 탭과 같다 — 보여 줄 종목이 없으면 목록으로 되돌린다.
+          view={selectedItem ? view : 'list'}
+          onBack={() => setView('list')}
+          backLabel="관심종목 목록으로"
+          className="gap-6 lg:grid-cols-[minmax(0,1fr)_480px] xl:grid-cols-[minmax(0,1fr)_560px]"
+          list={
+            <DataTable
+              caption="관심종목 목록"
+              rows={items}
+              columns={columns}
+              rowKey={(item) => item.symbol}
+              selectedKey={symbol}
+              onSelect={open}
+              minWidth="min-w-0 sm:min-w-[560px]"
+            />
+          }
+          detail={
+            selectedItem === null ? (
               <p className="text-sm text-neutral-500">종목을 누르면 상세가 여기 나옵니다.</p>
             ) : selectedItem.market === 'KR' ? (
               <StockDetailPanel
@@ -252,9 +270,9 @@ export function Watchlist({ symbol, section, onSelect, onSection }: Props) {
                 section={section}
                 onSection={onSection}
               />
-            )}
-          </aside>
-        </div>
+            )
+          }
+        />
       )}
     </div>
   )

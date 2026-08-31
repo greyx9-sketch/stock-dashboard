@@ -6,6 +6,7 @@ import type { Section } from '../lib/useRoute'
 import { useLivePrices } from '../lib/useLivePrices'
 import { Card } from '../components/ui/Card'
 import { Segmented } from '../components/ui/Segmented'
+import { SplitView } from '../components/ui/SplitView'
 import { Announce, Empty, ErrorBox, Loading } from '../components/ui/Status'
 
 // 스크리너. 기획서 5.4 — "PER 15배 이하 + ROE 10% 이상 같은 조건 필터".
@@ -98,6 +99,14 @@ export function Screener({ symbol, section, onSelect, onSection }: Props) {
   // 쓰도록 만들어져 있다 — 목록 100줄 전부를 폴링하면 구독 한도만 태운다.
   const live = useLivePrices(symbol ? [symbol] : [], 'KR')
 
+  // 좁은 화면에서 조건·목록 쪽과 상세 중 무엇을 보여 줄지. 국내·미국 탭과 같은 규칙이다.
+  const [view, setView] = useState<'list' | 'detail'>(symbol ? 'detail' : 'list')
+
+  const open = (next: string | null) => {
+    onSelect(next)
+    if (next) setView('detail')
+  }
+
   const reload = useCallback(() => {
     setLoading(true)
     fetchScreen({ ...filters, limit: 100 })
@@ -133,8 +142,15 @@ export function Screener({ symbol, section, onSelect, onSection }: Props) {
   const clear = () => setFilters({ sort: 'market_cap', desc: true, market: filters.market ?? null })
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_26rem]">
-      <div>
+    <SplitView
+      // 종목이 없으면 보여 줄 상세도 없다. 뒤로가기로 주소에서 종목이 빠졌을 때
+      // 빈 상세가 남아 있지 않게 한다.
+      view={symbol ? view : 'list'}
+      onBack={() => setView('list')}
+      backLabel="조건으로 돌아가기"
+      className="gap-4 lg:grid-cols-[minmax(0,1fr)_26rem]"
+      list={
+        <div>
         <div className="mb-3 flex flex-wrap items-center gap-1.5">
           <span className="mr-1 text-sm font-semibold">종목 고르기</span>
           <Segmented
@@ -142,6 +158,8 @@ export function Screener({ symbol, section, onSelect, onSection }: Props) {
             options={PRESET_OPTIONS}
             value={activePreset(filters)}
             onChange={applyPreset}
+            // 네 개가 한 줄에 안 들어가는 화면이 있다. 옆으로 밀지 말고 줄을 바꾸게 한다.
+            className="flex-wrap"
           />
           <button
             onClick={clear}
@@ -220,7 +238,7 @@ export function Screener({ symbol, section, onSelect, onSection }: Props) {
                 <MetricTable
                   rows={result.rows}
                   highlight={symbol ?? undefined}
-                  onPick={onSelect}
+                  onPick={open}
                   sort={filters.sort}
                   desc={filters.desc}
                   onSort={toggleSort}
@@ -238,11 +256,10 @@ export function Screener({ symbol, section, onSelect, onSection }: Props) {
           PER·PBR·ROE 는 <strong className="text-neutral-400">지배주주 몫</strong> 기준이고,
           적자·자본잠식이면 값을 내지 않아 그 조건에서 빠집니다.
         </p>
-      </div>
-
-      {/* 국내·미국 탭과 같은 규칙 — 상세를 화면에 붙잡아 둔다. */}
-      <aside className="lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:self-start lg:overflow-y-auto lg:pr-1">
-        {symbol ? (
+        </div>
+      }
+      detail={
+        symbol ? (
           <StockDetailPanel
             symbol={symbol}
             live={live.bySymbol.get(symbol)}
@@ -257,8 +274,8 @@ export function Screener({ symbol, section, onSelect, onSection }: Props) {
               hint="표에서 화살표로 옮기고 Enter 로도 열립니다."
             />
           </Card>
-        )}
-      </aside>
-    </div>
+        )
+      }
+    />
   )
 }

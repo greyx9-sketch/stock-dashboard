@@ -73,6 +73,8 @@ export function UsTable({ stocks, live, selectedSymbol, onSelect }: Props) {
       key: 'volume',
       header: '거래량',
       align: 'right',
+      // 국내 목록과 같은 규칙 — 휴대폰에는 종목·현재가·등락률만 남긴다.
+      hideBelow: 'sm',
       cellClassName: 'tabular text-neutral-400',
       render: (stock) => formatVolume(stock.trading_volume),
     },
@@ -80,6 +82,7 @@ export function UsTable({ stocks, live, selectedSymbol, onSelect }: Props) {
       key: 'trade_value',
       header: '거래대금',
       align: 'right',
+      hideBelow: 'sm',
       cellClassName: 'tabular text-neutral-400',
       // 거래대금은 토스가 원화로 환산해 준다. 달러가 아니다.
       render: (stock) => `${formatBigWon(stock.trading_amount)}원`,
@@ -94,7 +97,7 @@ export function UsTable({ stocks, live, selectedSymbol, onSelect }: Props) {
       rowKey={(stock) => stock.symbol}
       selectedKey={selectedSymbol}
       onSelect={onSelect}
-      minWidth="min-w-[640px]"
+      minWidth="min-w-0 sm:min-w-[640px]"
       empty="조건에 맞는 종목이 없습니다."
     />
   )

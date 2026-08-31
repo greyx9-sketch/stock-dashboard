@@ -48,9 +48,9 @@ export default function App() {
 
       {/* 1280px 은 이만한 표를 담기에 좁다. 큰 화면에서는 목록에 폭을 더 준다.
           — 그래야 시가총액 열까지 가로 스크롤 없이 들어온다. */}
-      <div className="mx-auto max-w-7xl px-4 py-6 xl:max-w-[1440px]">
+      <div className="mx-auto max-w-7xl px-3 py-4 sm:px-4 sm:py-6 xl:max-w-[1440px]">
       <div className="mb-5 flex flex-wrap items-center gap-3">
-        <h1 className="text-2xl font-semibold">주식 시세</h1>
+        <h1 className="text-xl font-semibold sm:text-2xl">주식 시세</h1>
         {/* 지금까지는 그냥 <button> 다섯 개였다. 스크린리더에는 "화면을 고르는 곳"이라는
             것이 전달되지 않았고, 키보드로는 Tab 을 다섯 번 눌러 지나가야 했다.
             묶음 전체가 탭 정지 하나가 되고 ←→ 로 옮긴다. */}

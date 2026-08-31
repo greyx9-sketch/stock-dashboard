@@ -36,7 +36,9 @@ export function StockTable({ stocks, live, selectedSymbol, onSelect }: Props) {
             {stock.market}
           </span>
           <span className="font-medium">{stock.name}</span>
-          <span className="tabular text-xs text-neutral-500">{stock.symbol}</span>
+          {/* 휴대폰에서는 종목코드를 감춘다. 이름으로 이미 구분되고, 여섯 자리가
+              더 붙으면 등락률 열이 화면 밖으로 밀려난다. */}
+          <span className="tabular hidden text-xs text-neutral-500 sm:inline">{stock.symbol}</span>
         </div>
       ),
     },
@@ -74,6 +76,9 @@ export function StockTable({ stocks, live, selectedSymbol, onSelect }: Props) {
       header: '확정 종가',
       subHeader: stocks[0]?.trade_date ?? '',
       align: 'right',
+      // 휴대폰에서는 일곱 열을 가로로 미는 것보다 세 열만 남기는 편이 읽힐다.
+      // 남기는 셋은 **지금 얼마인가**에 답하는 열이다 — 종목·현재가·등락률.
+      hideBelow: 'sm',
       cellClassName: 'tabular text-neutral-300',
       render: (stock) => (
         <>
@@ -88,6 +93,7 @@ export function StockTable({ stocks, live, selectedSymbol, onSelect }: Props) {
       key: 'volume',
       header: '거래량',
       align: 'right',
+      hideBelow: 'sm',
       cellClassName: 'tabular text-neutral-400',
       render: (stock) => formatVolume(stock.volume),
     },
@@ -95,6 +101,7 @@ export function StockTable({ stocks, live, selectedSymbol, onSelect }: Props) {
       key: 'trade_value',
       header: '거래대금',
       align: 'right',
+      hideBelow: 'sm',
       cellClassName: 'tabular text-neutral-400',
       render: (stock) => formatBigWon(stock.trade_value),
     },
@@ -102,6 +109,7 @@ export function StockTable({ stocks, live, selectedSymbol, onSelect }: Props) {
       key: 'market_cap',
       header: '시가총액',
       align: 'right',
+      hideBelow: 'sm',
       cellClassName: 'tabular text-neutral-400',
       render: (stock) => formatBigWon(stock.market_cap),
     },

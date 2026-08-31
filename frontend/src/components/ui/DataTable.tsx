@@ -24,6 +24,11 @@ export type Column<T> = {
   sortable?: boolean
   /** 칸에 붙는 추가 클래스. 값에 따라 달라지면 함수로 준다(등락 색 등). */
   cellClassName?: string | ((row: T) => string)
+  /**
+   * 이 폭보다 좁으면 열을 감춘다. 휴대폰에서 일곱 열을 가로로 미는 것보다,
+   * 꼭 봐야 하는 세 열만 남기는 편이 읽힌다. 감출 열은 화면마다 다르므로 여기서 정한다.
+   */
+  hideBelow?: 'sm' | 'md'
   render: (row: T) => ReactNode
 }
 
@@ -35,7 +40,11 @@ type DataTableProps<T> = {
   caption: string
   selectedKey?: string | null
   onSelect?: (key: string) => void
-  /** 이보다 좁아지면 가로로 스크롤한다. 숫자 칸이 줄바꿈되면 표가 흔들려 못 읽는다. */
+  /**
+   * 이보다 좁아지면 가로로 스크롤한다. 숫자 칸이 줄바꿈되면 표가 흔들려 못 읽는다.
+   * **휴대폰에서는 풀어 준다** — `min-w-0 sm:min-w-[720px]` 처럼 적으면 좁은 화면에서만
+   * 가로 밀기가 사라지고, 대신 `hideBelow` 로 감춘 열만큼 표가 좁아진다.
+   */
   minWidth?: string
   /** 가로 스크롤 시 첫 열을 붙잡아 둔다. */
   stickyFirst?: boolean
@@ -50,6 +59,13 @@ type DataTableProps<T> = {
   onSort?: (key: string) => void
 }
 
+// Tailwind 는 클래스 이름을 소스에서 글자 그대로 찾는다. `hidden ${bp}:table-cell` 처럼
+// 만들면 빌드에 안 들어가므로 표를 미리 적어 둔다.
+const HIDE_BELOW: Record<'sm' | 'md', string> = {
+  sm: 'hidden sm:table-cell',
+  md: 'hidden md:table-cell',
+}
+
 export function DataTable<T>({
   rows,
   columns,
@@ -57,7 +73,7 @@ export function DataTable<T>({
   caption,
   selectedKey,
   onSelect,
-  minWidth = 'min-w-[720px]',
+  minWidth = 'min-w-0 sm:min-w-[720px]',
   stickyFirst = false,
   empty = '조건에 맞는 항목이 없습니다.',
   variant = 'card',
@@ -156,7 +172,9 @@ export function DataTable<T>({
                   }
                   className={`${pad} ${embedded ? 'font-normal' : 'font-medium'} ${
                     column.align === 'right' ? 'text-right' : 'text-left'
-                  } ${stickyFirst && i === 0 ? 'sticky left-0 z-10 bg-neutral-900' : ''}`}
+                  } ${column.hideBelow ? HIDE_BELOW[column.hideBelow] : ''} ${
+                    stickyFirst && i === 0 ? 'sticky left-0 z-10 bg-neutral-900' : ''
+                  }`}
                 >
                   {canSort ? (
                     <button
@@ -212,6 +230,8 @@ export function DataTable<T>({
                   <td
                     key={column.key}
                     className={`${pad} ${column.align === 'right' ? 'text-right' : ''} ${
+                      column.hideBelow ? HIDE_BELOW[column.hideBelow] : ''
+                    } ${
                       typeof column.cellClassName === 'function'
                         ? column.cellClassName(row)
                         : (column.cellClassName ?? '')

@@ -156,7 +156,7 @@ export function CalendarGrid({
                 <div
                   role="gridcell"
                   key={`blank-${rowIndex}-${columnIndex}`}
-                  className="min-h-24 bg-neutral-950/60"
+                  className="min-h-16 bg-neutral-950/60 sm:min-h-24"
                 />
               )
             }
@@ -187,7 +187,7 @@ export function CalendarGrid({
                   onCursor(day)
                   onPick(isPicked ? null : iso)
                 }}
-                className={`min-h-24 bg-neutral-900 p-1.5 text-left align-top transition-colors hover:bg-neutral-800/70 ${
+                className={`min-h-16 bg-neutral-900 p-1.5 text-left align-top transition-colors hover:bg-neutral-800/70 sm:min-h-24 ${
                   isPicked ? 'ring-1 ring-inset ring-neutral-500' : ''
                 }`}
               >
@@ -204,7 +204,19 @@ export function CalendarGrid({
                 >
                   {day}
                 </span>
-                <div className="mt-1 space-y-0.5" aria-hidden>
+                {/* 휴대폰 칸은 50px 남짓이라 제목이 들어갈 자리가 없다. 점만 찍어
+                    "이 날 뭔가 있다"만 알리고, 무엇인지는 아래 목록에서 본다.
+                    소리로는 어차피 칸의 aria-label 이 제목까지 읽어 준다. */}
+                <div className="mt-1 flex flex-wrap gap-1 sm:hidden" aria-hidden>
+                  {dayEvents.slice(0, 4).map((event, i) => (
+                    <span
+                      key={`${iso}-dot-${i}`}
+                      className={`size-1.5 rounded-full ${style(event.kind).dot}`}
+                    />
+                  ))}
+                </div>
+
+                <div className="mt-1 hidden space-y-0.5 sm:block" aria-hidden>
                   {dayEvents.slice(0, 3).map((event, i) => (
                     <div
                       key={`${iso}-${i}`}

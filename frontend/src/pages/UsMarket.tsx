@@ -7,6 +7,7 @@ import { UsTable } from '../components/UsTable'
 import { UsDetailPanel } from '../components/UsDetailPanel'
 import { MarketBadge } from '../components/MarketBadge'
 import { Announce, ErrorBox } from '../components/ui/Status'
+import { SplitView } from '../components/ui/SplitView'
 
 // 미국 시장 화면.
 //
@@ -101,6 +102,17 @@ export function UsMarket({ symbol, section, onSelect, onSection }: Props) {
   const livePrices = useLivePrices(watchedSymbols, 'US')
   const selectedItem = stocks.find((s) => s.symbol === symbol)
 
+  // 좁은 화면에서 목록·상세 중 무엇을 보여 줄지. 주소에 종목이 적혀 있으면(링크를
+  // 받고 들어온 경우) 상세로 시작하고, 그렇지 않으면 목록부터 보여준다.
+  const [view, setView] = useState<'list' | 'detail'>(symbol ? 'detail' : 'list')
+
+  // 목록이 처음 뜨면서 첫 종목을 자동으로 여는 것은 "눌렀다"가 아니다. 그것까지
+  // 상세로 치면 휴대폰에서 앱을 열자마자 상세로 튕긴다. 사용자가 누른 길만 이것을 쓴다.
+  const open = (next: string | null) => {
+    onSelect(next)
+    if (next) setView('detail')
+  }
+
   // 국내 화면과 같은 규칙 — 목록이 바뀜 것을 소리로 알린다.
   const trimmedKeyword = keyword.trim()
   const listSummary = loading
@@ -122,7 +134,13 @@ export function UsMarket({ symbol, section, onSelect, onSection }: Props) {
         </p>
       </header>
 
-      <div className="mb-4 flex flex-wrap items-center gap-2">
+      {/* 좁은 화면에서 상세를 보는 중이면 도구줄을 감춘다. 검색·정렬·시장은 목록에 따라붙는
+          것이라, 상세만 보이는 화면 위에 남아 있으면 한 화면분을 그냥 잡아먹는다. */}
+      <div
+        className={`mb-4 flex-wrap items-center gap-2 ${
+          view === 'detail' ? 'hidden lg:flex' : 'flex'
+        }`}
+      >
         <input
           value={keyword}
           onChange={(event) => setKeyword(event.target.value)}
@@ -140,17 +158,25 @@ export function UsMarket({ symbol, section, onSelect, onSection }: Props) {
         </ErrorBox>
       )}
 
-      {/* 국내 화면과 같은 짜임 — 넓힌 상세 기둥 + 화면에 붙잡아 두기.
+      {/* 국내 화면과 같은 짜임 — 넓힌 상세 기둥 · 화면에 붙잡아 두기 · 좁은 화면에서는 둘 중 하나.
           두 화면이 다르게 움직이면 탭을 옮길 때마다 규칙을 다시 익혀야 한다. */}
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_480px] xl:grid-cols-[minmax(0,1fr)_560px]">
-        <UsTable
-          stocks={stocks}
-          live={livePrices.bySymbol}
-          selectedSymbol={symbol}
-          onSelect={onSelect}
-        />
-        <aside className="lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:self-start lg:overflow-y-auto lg:pr-1">
-          {symbol && (
+      <SplitView
+        // 종목이 없으면 보여 줄 상세도 없다. 뒤로가기로 주소에서 종목이 빠졌을 때
+        // 빈 상세가 남아 있지 않게 한다.
+        view={symbol ? view : 'list'}
+        onBack={() => setView('list')}
+        backLabel="종목 목록으로"
+        className="gap-6 lg:grid-cols-[minmax(0,1fr)_480px] xl:grid-cols-[minmax(0,1fr)_560px]"
+        list={
+          <UsTable
+            stocks={stocks}
+            live={livePrices.bySymbol}
+            selectedSymbol={symbol}
+            onSelect={open}
+          />
+        }
+        detail={
+          symbol && (
             <UsDetailPanel
               symbol={symbol}
               listItem={selectedItem}
@@ -159,9 +185,9 @@ export function UsMarket({ symbol, section, onSelect, onSection }: Props) {
               section={section}
               onSection={onSection}
             />
-          )}
-        </aside>
-      </div>
+          )
+        }
+      />
 
       <footer className="mt-8 border-t border-neutral-800 pt-4 text-xs text-neutral-500">
         <p>시세: 토스증권 · 재무와 공시: SEC EDGAR (10-K / 10-Q / 8-K)</p>

@@ -50,10 +50,15 @@ export function UpcomingEvents() {
 
   return (
     <div className="border-b border-neutral-900 bg-neutral-950/60">
-      <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-4 gap-y-1 px-4 py-1.5 text-xs">
-        <span className="text-neutral-600">다가오는 일정</span>
+      {/* 휴대폰에서는 줄바꿈 대신 옆으로 민다. 네 건이 네 줄이 되면 화면 위쪽을
+          통째로 차지해서 정작 시세가 안 보인다. */}
+      <div className="mx-auto flex max-w-7xl flex-nowrap items-center gap-x-4 gap-y-1 overflow-x-auto px-3 py-1.5 text-xs sm:flex-wrap sm:px-4">
+        <span className="shrink-0 text-neutral-600">다가오는 일정</span>
         {items.map(({ event, days_away }) => (
-          <span key={`${event.event_date}-${event.title}`} className="flex items-center gap-1.5">
+          <span
+            key={`${event.event_date}-${event.title}`}
+            className="flex shrink-0 items-center gap-1.5 whitespace-nowrap"
+          >
             <span className={`size-1.5 rounded-full ${KIND_DOT[event.kind] ?? KIND_DOT.기타}`} />
             <span className="tabular text-neutral-500">{event.event_date.slice(5)}</span>
             <span className="text-neutral-300">{event.title}</span>

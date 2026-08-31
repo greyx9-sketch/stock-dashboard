@@ -35,7 +35,7 @@ export function MetricTable({ rows, highlight, onPick, sort, desc, onSort }: Pro
       render: (row) => (
         <>
           <span className="text-neutral-200">{row.name}</span>
-          <span className="tabular ml-1 text-neutral-600">{row.symbol}</span>
+          <span className="tabular ml-1 hidden text-neutral-600 sm:inline">{row.symbol}</span>
           {row.symbol === highlight && (
             <span className="ml-1 rounded bg-neutral-700 px-1 text-xs text-neutral-200">
               이 종목
@@ -48,8 +48,10 @@ export function MetricTable({ rows, highlight, onPick, sort, desc, onSort }: Pro
     num('pbr', 'PBR', (row) => cell(row.pbr), 'text-neutral-200'),
     num('roe', 'ROE', (row) => cell(row.roe, '%')),
     num('dividend_yield', '배당', (row) => cell(row.dividend_yield, '%')),
-    num('revenue_growth', '매출증가', (row) => cell(row.revenue_growth, '%')),
-    num('market_cap', '시총', (row) => formatBigWon(row.market_cap), 'text-neutral-400'),
+    // 일곱 열은 휴대폰에 안 들어간다. 시총·매출증가를 감추면 지표 네 열이 남아
+    // 가로로 밀지 않고도 PER·PBR·ROE·배당을 한 눈에 볼 수 있다.
+    num('revenue_growth', '매출증가', (row) => cell(row.revenue_growth, '%'), undefined, 'sm'),
+    num('market_cap', '시총', (row) => formatBigWon(row.market_cap), 'text-neutral-400', 'sm'),
   ]
 
   return (
@@ -67,7 +69,7 @@ export function MetricTable({ rows, highlight, onPick, sort, desc, onSort }: Pro
       // 기둥을 480 으로 넓히고 표를 460 으로 줄여 양쪽에서 만나게 했다.
       // 그보다 더 좁아지면 눌러 담지 않고 옆으로 넘긴다. 첫 열(종목)은 붙잡아 둬야
       // 가로로 밀었을 때 어느 회사의 숫자인지 알 수 있다.
-      minWidth="min-w-[460px]"
+      minWidth="min-w-0 sm:min-w-[460px]"
       stickyFirst
       sort={sort}
       desc={desc}
@@ -83,12 +85,14 @@ function num(
   header: string,
   render: (row: ScreenRow) => string,
   tone = 'text-neutral-300',
+  hideBelow?: 'sm' | 'md',
 ): Column<ScreenRow> {
   return {
     key,
     header,
     align: 'right',
     sortable: true,
+    hideBelow,
     cellClassName: `tabular ${tone}`,
     render,
   }
