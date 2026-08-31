@@ -1,5 +1,6 @@
 import { useRef } from 'react'
 import type { ReactNode } from 'react'
+import { Card } from './Card'
 
 // 목록 표. 국내·미국·관심종목이 각자 <table> 을 처음부터 다시 쓰고 있었다.
 //
@@ -76,9 +77,7 @@ export function DataTable<T>({
     return embedded ? (
       <p className="px-3 py-4 text-xs text-neutral-500">{empty}</p>
     ) : (
-      <div className="rounded-lg border border-neutral-800 p-8 text-center text-sm text-neutral-500">
-        {empty}
-      </div>
+      <Card bodyClassName="p-8 text-center text-sm text-neutral-500">{empty}</Card>
     )
   }
 

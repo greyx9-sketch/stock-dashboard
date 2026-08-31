@@ -16,6 +16,7 @@ import { StockDetailPanel } from '../components/StockDetailPanel'
 import { UsDetailPanel } from '../components/UsDetailPanel'
 import { ErrorBox } from '../components/ui/Status'
 import { DataTable, type Column } from '../components/ui/DataTable'
+import { Card } from '../components/ui/Card'
 
 // 관심종목 탭. 기획서 5.1 의 관심종목 그리드다.
 //
@@ -207,7 +208,7 @@ export function Watchlist({ symbol, section, onSelect, onSection }: Props) {
       )}
 
       {loaded && items.length === 0 ? (
-        <div className="rounded-lg border border-neutral-800 bg-neutral-900/40 p-6 text-sm text-neutral-400">
+        <Card bodyClassName="p-6 text-sm text-neutral-400">
           <p>담아 둔 종목이 없습니다.</p>
           <p className="mt-2 text-neutral-500">
             국내·미국 탭에서 종목을 열고 이름 옆의 <span className="text-amber-400">☆</span> 를
@@ -216,7 +217,7 @@ export function Watchlist({ symbol, section, onSelect, onSection }: Props) {
           <p className="mt-2 text-neutral-500">
             목록은 서버에 저장되므로 다른 기기에서 열어도 그대로 보입니다.
           </p>
-        </div>
+        </Card>
       ) : (
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_480px] xl:grid-cols-[minmax(0,1fr)_560px]">
           <DataTable

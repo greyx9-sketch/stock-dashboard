@@ -77,7 +77,7 @@ export default function App() {
         {tab === 'kr' && <KrMarket key="kr" {...detail} />}
         {tab === 'us' && <UsMarket key="us" {...detail} />}
         {tab === 'watch' && <Watchlist key="watch" {...detail} />}
-        {tab === 'screen' && <Screener key="screen" />}
+        {tab === 'screen' && <Screener key="screen" {...detail} />}
         {tab === 'calendar' && <Calendar key="calendar" />}
       </div>
       </div>
