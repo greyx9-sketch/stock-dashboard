@@ -99,6 +99,13 @@ export type MarketFilter = 'KOSPI' | 'KOSDAQ' | 'KONEX'
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, init)
   if (!response.ok) {
+    // 2026-09-01 부터 **보는 것은 누구나, 바꾸는 것은 주인만**이다(`deploy/Caddyfile`).
+    // 방문자가 메모를 쓰거나 분석 버튼을 누르면 여기로 온다. "HTTP 401" 이라고만 뜨면
+    // 고장으로 읽히므로 무슨 일인지 적는다. 이 응답은 Caddy 가 내므로 detail 이 없다.
+    if (response.status === 401) {
+      throw new Error('이 기능은 사이트 주인만 쓸 수 있습니다. 보는 것은 누구나 됩니다.')
+    }
+
     // 백엔드는 실패 이유를 detail 에 한국어로 담아 보낸다. 그대로 화면에 보여준다.
     let detail = `요청이 실패했습니다 (HTTP ${response.status})`
     try {

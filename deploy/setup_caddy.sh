@@ -103,10 +103,19 @@ sudo systemctl restart caddy
 sleep 4
 echo "caddy: $(systemctl is-active caddy)"
 
-# 인증이 실제로 걸렸는지 확인한다. 자리표시자가 남거나 문법이 깨지면 여기서 잡힌다.
-code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1/ || true)
-echo "인증 없이 접속: HTTP $code (401 이어야 정상)"
-[ "$code" = "401" ] || {
-	echo "ERROR: 비밀번호가 걸리지 않았다" >&2
+# 선이 제대로 그어졌는지 양쪽에서 확인한다. 자리표시자가 남거나 매처 문법이 깨지면
+# 여기서 잡힌다. **둘 다 봐야 한다** — 한쪽만 보면 "전부 열림"이나 "전부 잠김"을 놓친다.
+read_code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1/ || true)
+echo "비밀번호 없이 보기: HTTP $read_code (200 이어야 정상)"
+[ "$read_code" = "200" ] || {
+	echo "ERROR: 누구나 볼 수 있어야 하는데 막혔다" >&2
+	exit 1
+}
+
+# 쓰기는 막혀야 한다. 인증이 통과하면 본문이 없어 422 가 되므로, 401 이 아니면 잘못된 것이다.
+write_code=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1/api/watchlist || true)
+echo "비밀번호 없이 쓰기: HTTP $write_code (401 이어야 정상)"
+[ "$write_code" = "401" ] || {
+	echo "ERROR: 쓰기에 비밀번호가 걸리지 않았다 — 남이 메모를 지우거나 분석을 돌릴 수 있다" >&2
 	exit 1
 }
