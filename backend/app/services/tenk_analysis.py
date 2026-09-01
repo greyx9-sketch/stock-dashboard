@@ -30,9 +30,14 @@ from sqlalchemy import select
 from app.clients.sec import SecClient, SecError, UsFiling
 from app.config import get_settings
 from app.models.base import get_session
-from app.models.us_analysis import STATUS_FAILED, STATUS_OK, SecAnalysis
+from app.models.us_analysis import (
+    STATUS_FAILED,
+    STATUS_OK,
+    STATUS_PENDING,
+    SecAnalysis,
+)
 from app.models.us_company import SecCompany
-from app.services import llm_budget
+from app.services import analysis_batch, llm_budget
 from app.services.tenk_extract import (
     TenKExtractError,
     TenKSections,
@@ -293,10 +298,14 @@ async def _fetch_sections(filing: UsFiling) -> TenKSections:
     return sections
 
 
-async def _call_model(
+async def _fit_prompt(
     client: anthropic.AsyncAnthropic, doc: _Document
-) -> tuple[TenKAnalysisContent, TenKSections, int, int]:
-    """입력 상한을 지킨 뒤 한 번 호출한다."""
+) -> tuple[str, TenKSections, int]:
+    """입력 상한 안에 들어오는 프롬프트를 만든다. (프롬프트, 쓴 섹션, 토큰 수)
+
+    동기 호출과 배치 제출이 **같은 프롬프트를 써야** 결과를 견줄 수 있으므로 여기 모았다.
+    `count_tokens` 는 무료라 잘라내기를 몇 번 돌려도 돈이 들지 않는다.
+    """
     sections = doc.sections
     prompt = _build_prompt(doc, sections)
 
@@ -307,16 +316,23 @@ async def _call_model(
             messages=[{"role": "user", "content": prompt}],
         )
         if counted.input_tokens <= MAX_INPUT_TOKENS:
-            break
+            return prompt, sections, counted.input_tokens
         logger.warning(
             "입력이 상한을 넘어 잘라냅니다: %d > %d", counted.input_tokens, MAX_INPUT_TOKENS
         )
         sections = _trim(sections)
         prompt = _build_prompt(doc, sections)
-    else:
-        raise AnalysisError(
-            "본문이 너무 길어 상한 안으로 줄이지 못했습니다. 분석하지 않았습니다."
-        )
+
+    raise AnalysisError(
+        "본문이 너무 길어 상한 안으로 줄이지 못했습니다. 분석하지 않았습니다."
+    )
+
+
+async def _call_model(
+    client: anthropic.AsyncAnthropic, doc: _Document
+) -> tuple[TenKAnalysisContent, TenKSections, int, int]:
+    """입력 상한을 지킨 뒤 한 번 호출한다."""
+    prompt, sections, _ = await _fit_prompt(client, doc)
 
     response = await client.messages.parse(
         model=MODEL,
@@ -442,7 +458,191 @@ def _should_rerun(row: SecAnalysis, *, force: bool) -> bool:
     """
     if row.status == STATUS_OK:
         return False
+    # 배치에 맡겨 두고 기다리는 중이면 건드리지 않는다. 다시 부르면 같은 문서를 두 번
+    # 사는 것이고, 곧 도착할 결과가 이 행을 덮어쓴다.
+    if row.status == STATUS_PENDING:
+        return False
     # 돈을 쓰지 않고 실패한 것(원문 내려받기·추출 실패)은 공짜로 다시 시도한다.
     if row.input_tokens == 0:
         return True
     return force
+
+
+# ---------------------------------------------------------------- 배치 경로
+#
+# 밤에 도는 자동 분석만 이 길로 간다. **모든 토큰이 반값**인 대신 결과가 최대 24시간
+# 뒤에 온다(`analysis_batch.py` 참고). 사람이 "분석하기"를 누른 경우는 위의 동기 경로다.
+#
+# 두 단계로 나뉜다:
+#   prepare_batch()  문서를 받아 프롬프트를 만들고 **대기 행을 저장한 뒤** 요청을 돌려준다
+#   apply_outcome()  결과가 오면 그 대기 행을 덮어쓴다
+#
+# 대기 행을 미리 저장하는 이유가 셋이다 — 하루 상한이 제출한 건수를 세고, 같은 문서를
+# 두 번 맡기지 않으며, 화면이 "분석 중"을 보여줄 수 있다.
+
+#: 배치 요청 하나를 우리 행과 잇는 이름표. 국내(`kr:`)와 한 배치에 섞여 들어간다.
+CUSTOM_ID_PREFIX = "us:"
+
+
+def custom_id_for(accession_no: str) -> str:
+    return f"{CUSTOM_ID_PREFIX}{accession_no}"
+
+
+async def prepare_batch(company: SecCompany) -> object | None:
+    """자동 분석용 배치 요청 한 건. 맡길 것이 없으면 None.
+
+    돈이 드는 단계 직전까지 여기서 다 한다 — 최신 보고서 찾기, 원문 받기, 항목 추출,
+    프롬프트 길이 맞추기. 실패하면 그 이유를 행으로 남기고 None 을 돌려준다(동기 경로와 같다).
+    """
+    filing = await _latest_10k(company)
+
+    existing = _find(filing.accession_no)
+    if existing is not None and not _should_rerun(existing, force=False):
+        return None
+
+    async with llm_budget.call_lock:
+        existing = _find(filing.accession_no)
+        if existing is not None and not _should_rerun(existing, force=False):
+            return None
+
+        try:
+            llm_budget.check_daily_limit()
+        except llm_budget.BudgetExceeded as exc:
+            raise AnalysisError(str(exc)) from exc
+
+        doc_stub = _Document(company=company, filing=filing, sections=_EMPTY)
+        try:
+            sections = await _fetch_sections(filing)
+        except (SecError, TenKExtractError) as exc:
+            _save(_failed_row(doc_stub, str(exc)))
+            return None
+
+        doc = _Document(company=company, filing=filing, sections=sections)
+        client = _client()
+        try:
+            prompt, used_sections, in_tok = await _fit_prompt(client, doc)
+        except AnalysisError as exc:
+            _save(_failed_row(doc, str(exc)))
+            return None
+        except anthropic.APIStatusError as exc:
+            _save(_failed_row(doc, f"Anthropic API 오류 (HTTP {exc.status_code}): {exc.message}"))
+            return None
+        except anthropic.APIConnectionError:
+            _save(_failed_row(doc, "Anthropic 서버에 연결하지 못했습니다. 잠시 뒤 다시 시도해 주세요."))
+            return None
+        finally:
+            await client.close()
+
+        # 대기 행. input_tokens 를 미리 넣는 것은 하루 상한이 이 건을 세게 하려는 것이다.
+        # 실제 값은 결과가 오면 덮어쓴다.
+        _save(
+            SecAnalysis(
+                accession_no=filing.accession_no,
+                model=MODEL,
+                prompt_version=PROMPT_VERSION,
+                cik=company.cik,
+                ticker=company.ticker,
+                fiscal_year=doc.fiscal_year,
+                period_end=filing.report_date or "",
+                filed_date=filing.filing_date,
+                source_url=filing.viewer_url,
+                content_json="",
+                sections=",".join(used_sections.found),
+                truncated=",".join(used_sections.truncated),
+                input_tokens=in_tok,
+                output_tokens=0,
+                cost_micro_usd=0,
+                status=STATUS_PENDING,
+                error="",
+            )
+        )
+
+        return analysis_batch.build_request(
+            custom_id=custom_id_for(filing.accession_no),
+            model=MODEL,
+            system=SYSTEM_PROMPT,
+            prompt=prompt,
+            output_model=TenKAnalysisContent,
+            max_tokens=MAX_OUTPUT_TOKENS,
+            effort=EFFORT,
+        )
+
+
+def mark_submitted(accession_no: str, batch_id: str) -> None:
+    """대기 행에 배치 id 를 적는다. 제출이 끝난 뒤에만 부른다."""
+    with get_session() as session:
+        row = session.get(SecAnalysis, (accession_no, MODEL, PROMPT_VERSION))
+        if row is not None:
+            row.batch_id = batch_id
+            session.commit()
+
+
+def pending_batch_ids() -> list[str]:
+    """결과를 기다리는 배치 id 들."""
+    with get_session() as session:
+        return list(
+            session.execute(
+                select(SecAnalysis.batch_id)
+                .where(SecAnalysis.status == STATUS_PENDING, SecAnalysis.batch_id != "")
+                .distinct()
+            ).scalars()
+        )
+
+
+def apply_outcome(outcome: analysis_batch.Outcome) -> bool:
+    """배치 결과 한 건을 대기 행에 덮어쓴다. 우리 행이 아니면 False.
+
+    성공이든 실패든 **행을 남긴다.** 지우면 다음 자동 분석이 같은 문서를 또 맡긴다.
+    """
+    if not outcome.custom_id.startswith(CUSTOM_ID_PREFIX):
+        return False
+    accession_no = outcome.custom_id[len(CUSTOM_ID_PREFIX) :]
+
+    with get_session() as session:
+        row = session.get(SecAnalysis, (accession_no, MODEL, PROMPT_VERSION))
+        if row is None:
+            logger.warning("배치 결과에 맞는 행이 없다: %s", outcome.custom_id)
+            return False
+
+        row.input_tokens = outcome.input_tokens or row.input_tokens
+        row.output_tokens = outcome.output_tokens
+        row.cost_micro_usd = llm_budget.cost_micro_usd(
+            row.input_tokens, outcome.output_tokens, batch=True
+        )
+
+        # 실패 이유를 하나씩 좁혀 간다. 마지막까지 None 이면 성공이다.
+        # **어느 갈래로 빠지든 마지막에 한 번 커밋한다** — 갈래마다 커밋을 흩어 놓으면
+        # 하나를 빠뜨렸을 때 그 경우만 조용히 저장되지 않는다(실제로 한 번 그랬다).
+        failure: str | None = None
+        content = None
+
+        if not outcome.ok:
+            failure = outcome.error or "배치 처리에 실패했습니다."
+        else:
+            try:
+                content = analysis_batch.parse_content(outcome.text or "", TenKAnalysisContent)
+            except Exception as exc:  # noqa: BLE001 — 어떤 형식 오류든 행으로 남긴다
+                failure = f"분석 결과를 정해진 형식으로 받지 못했습니다: {type(exc).__name__}"
+
+        # 동기 경로와 같은 검사. 껍데기를 저장하면 캐시가 영원히 껍데기를 돌려준다.
+        if failure is None and content is not None and not _is_complete(content):
+            failure = "분석 결과가 비어 있어 저장하지 않았습니다."
+
+        if failure is not None:
+            row.status = STATUS_FAILED
+            row.error = failure
+        else:
+            row.content_json = content.model_dump_json()  # type: ignore[union-attr]
+            row.status = STATUS_OK
+            row.error = ""
+            logger.info(
+                "10-K 배치 분석 완료: %s FY%d · 입력 %d · 출력 %d · 추정 $%.3f",
+                row.ticker,
+            row.fiscal_year,
+                row.input_tokens,
+                row.output_tokens,
+                row.cost_micro_usd / 1_000_000,
+            )
+
+        session.commit()
+        return True

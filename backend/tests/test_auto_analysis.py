@@ -11,6 +11,10 @@
 
 **모델을 실제로 부르지 않는다.** 테스트가 돈을 쓰면 안 되고, 결과가 그날 사정에 따라
 달라져서도 안 된다. 분석 함수를 갈아 끼우고 **부른 횟수**만 센다.
+
+2026-09-01 부터 자동 분석은 **배치로 맡기고 끝난다**(반값, 최대 24시간). 그래서 여기서
+세는 것은 "몇 건을 분석했나"가 아니라 **"몇 건을 맡겼나"**다. 울타리(사람 몫 5건,
+한 번에 3건)는 그대로이고, 오히려 더 중요해졌다 — 맡긴 순간 돈이 확정되기 때문이다.
 """
 
 from __future__ import annotations
@@ -21,6 +25,13 @@ from app.models.base import get_session, init_db
 from app.models.watchlist import WatchlistItem
 from app.services import auto_analysis
 from tests.conftest import run_async
+
+
+class _FakeClient:
+    """배치 클라이언트 자리. 아무것도 하지 않고 닫히기만 한다."""
+
+    async def close(self) -> None:
+        return None
 
 
 @pytest.fixture(autouse=True)
@@ -46,19 +57,32 @@ def _watch(*symbols: str) -> None:
 
 
 class _Spy:
-    """분석 함수를 대신한다. 무엇을 몇 번 불렀는지만 센다."""
+    """준비 함수를 대신한다. 무엇을 몇 번 불렀는지만 센다.
 
-    def __init__(self, outcome: str = "analyzed"):
+    `submitted` 면 배치 요청 한 건을 함께 돌려준다 — `run()` 이 그것을 모아 제출한다.
+    """
+
+    def __init__(self, outcome: str = "submitted"):
         self.calls: list[str] = []
         self.outcome = outcome
 
     async def __call__(self, symbol: str):
         self.calls.append(symbol)
-        return self.outcome, "문서-1"
+        if self.outcome != "submitted":
+            return self.outcome, "", None
+        return self.outcome, f"us:{symbol}", {"custom_id": f"us:{symbol}"}
+
+
+async def _fake_submit(client, requests):
+    return "batch-테스트"
 
 
 def _run(monkeypatch, spy, *, calls_today: int = 0, limit: int = 20):
-    monkeypatch.setattr(auto_analysis, "_analyze_one", spy)
+    monkeypatch.setattr(auto_analysis, "_prepare_one", spy)
+    # **배치 제출을 실제로 하지 않는다.** 테스트가 돈을 쓰면 안 된다.
+    monkeypatch.setattr(auto_analysis.analysis_batch, "submit", _fake_submit)
+    monkeypatch.setattr(auto_analysis.analysis_batch, "new_client", lambda: _FakeClient())
+    monkeypatch.setattr(auto_analysis, "_mark_submitted", lambda *a: None)
     monkeypatch.setattr(auto_analysis.llm_budget, "calls_today", lambda: calls_today)
     monkeypatch.setattr(
         auto_analysis, "get_settings", lambda: type("S", (), {"analysis_daily_limit": limit})()
@@ -97,7 +121,7 @@ def test_at_most_three_per_run(monkeypatch):
     spy = _Spy()
     report = _run(monkeypatch, spy)
 
-    assert len(report.analyzed) == auto_analysis.MAX_PER_RUN == 3
+    assert len(report.submitted) == auto_analysis.MAX_PER_RUN == 3
     assert len(spy.calls) == 3
     assert "3건" in (report.stopped_reason or "")
 
@@ -114,7 +138,7 @@ def test_already_analyzed_does_not_count_against_the_run(monkeypatch):
 
     assert spy.calls == ["005930", "000660", "035720", "AAPL", "MSFT"]
     assert report.already_had == 5
-    assert report.analyzed == []
+    assert report.submitted == []
     assert report.stopped_reason is None
 
 
@@ -128,10 +152,10 @@ def test_one_failure_does_not_stop_the_rest(monkeypatch):
     async def _flaky(symbol: str):
         if symbol == "005930":
             raise RuntimeError("보고서 없음")
-        return "analyzed", "문서-1"
+        return "submitted", "us:AAPL", {"custom_id": "us:AAPL"}
 
     report = _run(monkeypatch, _flaky)
-    assert report.analyzed == ["AAPL"]
+    assert report.submitted == ["AAPL"]
     assert len(report.failed) == 1
 
 
@@ -160,18 +184,19 @@ def test_korean_and_us_symbols_go_to_different_analysers(monkeypatch):
     """6자리 숫자는 국내(사업보고서), 나머지는 미국(10-K)이다."""
     seen: list[tuple[str, str]] = []
 
-    async def _fake_dart_analyze(corp, **kwargs):
+    async def _fake_dart_prepare(corp):
         seen.append(("KR", corp.stock_code))
-        return type("Row", (), {"receipt_no": "새-접수번호"})()
+        return {"custom_id": f"kr:{corp.stock_code}"}
 
-    async def _fake_tenk_analyze(company, **kwargs):
+    async def _fake_tenk_prepare(company):
         seen.append(("US", company.ticker))
-        return type("Row", (), {"accession_no": "새-접수번호"})()
+        return {"custom_id": f"us:{company.ticker}"}
 
-    monkeypatch.setattr(auto_analysis.dart_analysis, "analyze", _fake_dart_analyze)
-    monkeypatch.setattr(auto_analysis.dart_analysis, "load", lambda s: None)
-    monkeypatch.setattr(auto_analysis.tenk_analysis, "analyze", _fake_tenk_analyze)
-    monkeypatch.setattr(auto_analysis.tenk_analysis, "load", lambda s: None)
+    monkeypatch.setattr(auto_analysis.dart_analysis, "prepare_batch", _fake_dart_prepare)
+    monkeypatch.setattr(auto_analysis.tenk_analysis, "prepare_batch", _fake_tenk_prepare)
+    monkeypatch.setattr(auto_analysis.analysis_batch, "submit", _fake_submit)
+    monkeypatch.setattr(auto_analysis.analysis_batch, "new_client", lambda: _FakeClient())
+    monkeypatch.setattr(auto_analysis, "_mark_submitted", lambda *a: None)
     monkeypatch.setattr(
         auto_analysis.dart_corps, "get_corp",
         lambda s: type("C", (), {"stock_code": s, "corp_code": "0" * 8})(),

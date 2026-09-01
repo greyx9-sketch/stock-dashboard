@@ -20,7 +20,7 @@ import logging
 from fastapi import APIRouter, HTTPException, Path, Query
 from pydantic import BaseModel, Field
 
-from app.models.dart_analysis import STATUS_OK, DartAnalysis
+from app.models.dart_analysis import STATUS_OK, STATUS_PENDING, DartAnalysis
 from app.services import dart_analysis, dart_corps
 
 logger = logging.getLogger(__name__)
@@ -37,7 +37,9 @@ class RiskItemOut(BaseModel):
 class KrAnalysisOut(BaseModel):
     """분석 결과. `status` 로 세 가지 상태를 구분한다."""
 
-    status: str = Field(description="ok=분석 있음 / none=아직 안 함 / failed=실패")
+    status: str = Field(
+        description="ok=분석 있음 / none=아직 안 함 / pending=맡겨 둔 중 / failed=실패"
+    )
     stock_code: str
 
     corp_name: str | None = None
@@ -66,6 +68,14 @@ def _split(value: str) -> list[str]:
 def _to_out(stock_code: str, row: DartAnalysis | None) -> KrAnalysisOut:
     if row is None:
         return KrAnalysisOut(status="none", stock_code=stock_code)
+    # 배치에 맡겨 놓고 기다리는 중. **실패와 같은 칸에 묶지 않는다** — 사용자가
+    # 다시 누를 일이 아니고, 곷 나온다고 말해 줘야 한다.
+    if row.status == STATUS_PENDING:
+        return KrAnalysisOut(
+            status="pending",
+            stock_code=row.stock_code,
+            corp_name=row.corp_name or None,
+        )
     if row.status != STATUS_OK:
         return KrAnalysisOut(
             status="failed",

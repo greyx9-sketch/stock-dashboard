@@ -33,8 +33,13 @@ from app.clients.dart import DartClient, DartError, Disclosure
 from app.config import get_settings
 from app.models.base import get_session
 from app.models.corp import DartCorp
-from app.models.dart_analysis import STATUS_FAILED, STATUS_OK, DartAnalysis
-from app.services import llm_budget
+from app.models.dart_analysis import (
+    STATUS_FAILED,
+    STATUS_OK,
+    STATUS_PENDING,
+    DartAnalysis,
+)
+from app.services import analysis_batch, llm_budget
 from app.services.dart_extract import (
     DartExtractError,
     ReportSections,
@@ -315,9 +320,14 @@ def _is_complete(content: ReportAnalysisContent) -> bool:
 # ---------------------------------------------------------------- 본체
 
 
-async def _call_model(
+async def _fit_prompt(
     client: anthropic.AsyncAnthropic, report: _Report
-) -> tuple[ReportAnalysisContent, ReportSections, int, int]:
+) -> tuple[str, ReportSections, int]:
+    """입력 상한 안에 들어오는 프롬프트를 만든다. (프롬프트, 쓴 섹션, 토큰 수)
+
+    동기 호출과 배치 제출이 **같은 프롬프트를 써야** 결과를 견줄 수 있으므로 여기 모았다.
+    `count_tokens` 는 무료라 잘라내기를 몇 번 돌려도 돈이 들지 않는다.
+    """
     sections = report.sections
     prompt = _build_prompt(report, sections)
 
@@ -328,12 +338,18 @@ async def _call_model(
             messages=[{"role": "user", "content": prompt}],
         )
         if counted.input_tokens <= MAX_INPUT_TOKENS:
-            break
+            return prompt, sections, counted.input_tokens
         logger.warning("입력이 상한을 넘어 잘라냅니다: %d", counted.input_tokens)
         sections = _trim(sections)
         prompt = _build_prompt(report, sections)
-    else:
-        raise AnalysisError("본문이 너무 길어 상한 안으로 줄이지 못했습니다.")
+
+    raise AnalysisError("본문이 너무 길어 상한 안으로 줄이지 못했습니다.")
+
+
+async def _call_model(
+    client: anthropic.AsyncAnthropic, report: _Report
+) -> tuple[ReportAnalysisContent, ReportSections, int, int]:
+    prompt, sections, _ = await _fit_prompt(client, report)
 
     response = await client.messages.parse(
         model=MODEL,
@@ -372,6 +388,10 @@ def _should_rerun(row: DartAnalysis, *, force: bool) -> bool:
     없고 돈만 든다. 프롬프트를 고쳤으면 PROMPT_VERSION 을 올리는 것이 올바른 방법이다.
     """
     if row.status == STATUS_OK:
+        return False
+    # 배치에 맡겨 두고 기다리는 중이면 건드리지 않는다. 다시 부르면 같은 문서를 두 번
+    # 사는 것이고, 곧 도착할 결과가 이 행을 덮어쓴다.
+    if row.status == STATUS_PENDING:
         return False
     if row.input_tokens == 0:
         return True  # 돈을 쓰지 않고 실패한 것은 공짜로 다시 시도한다
@@ -461,3 +481,178 @@ async def analyze(corp: DartCorp, *, force: bool = False) -> DartAnalysis:
             saved.cost_usd,
         )
         return saved
+
+
+# ---------------------------------------------------------------- 배치 경로
+#
+# 미국(`tenk_analysis.py`)과 같은 짜임이다. 밤에 도는 자동 분석만 이 길로 가고,
+# 사람이 누른 경우는 위의 동기 경로다. 자세한 이유는 `analysis_batch.py` 머리말 참고.
+
+#: 배치 요청 하나를 우리 행과 잇는 이름표. 미국(`us:`)과 한 배치에 섞여 들어간다.
+CUSTOM_ID_PREFIX = "kr:"
+
+
+def custom_id_for(receipt_no: str) -> str:
+    return f"{CUSTOM_ID_PREFIX}{receipt_no}"
+
+
+async def prepare_batch(corp: DartCorp) -> object | None:
+    """자동 분석용 배치 요청 한 건. 맡길 것이 없으면 None."""
+    try:
+        candidates = await _annual_candidates(corp)
+    except DartError as exc:
+        raise AnalysisError(str(exc)) from exc
+
+    if not candidates:
+        return None
+
+    existing = _find(candidates[0].receipt_no)
+    if existing is not None and not _should_rerun(existing, force=False):
+        return None
+
+    async with llm_budget.call_lock:
+        existing = _find(candidates[0].receipt_no)
+        if existing is not None and not _should_rerun(existing, force=False):
+            return None
+
+        try:
+            llm_budget.check_daily_limit()
+        except llm_budget.BudgetExceeded as exc:
+            raise AnalysisError(str(exc)) from exc
+
+        try:
+            disclosure, sections = await _fetch_sections(candidates)
+        except AnalysisError as exc:
+            _save(_failed_row(corp, candidates[0], str(exc)))
+            return None
+
+        report = _Report(corp=corp, disclosure=disclosure, sections=sections)
+        client = _client()
+        try:
+            prompt, used, in_tok = await _fit_prompt(client, report)
+        except AnalysisError as exc:
+            _save(_failed_row(corp, disclosure, str(exc)))
+            return None
+        except anthropic.APIStatusError as exc:
+            _save(
+                _failed_row(corp, disclosure, f"Anthropic API 오류 (HTTP {exc.status_code}): {exc.message}")
+            )
+            return None
+        except anthropic.APIConnectionError:
+            _save(
+                _failed_row(corp, disclosure, "Anthropic 서버에 연결하지 못했습니다. 잠시 뒤 다시 시도해 주세요.")
+            )
+            return None
+        finally:
+            await client.close()
+
+        # 대기 행. input_tokens 를 미리 넣는 것은 하루 상한이 이 건을 세게 하려는 것이다.
+        _save(
+            DartAnalysis(
+                receipt_no=disclosure.receipt_no,
+                model=MODEL,
+                prompt_version=PROMPT_VERSION,
+                corp_code=corp.corp_code,
+                stock_code=corp.stock_code,
+                corp_name=corp.corp_name,
+                report_name=disclosure.report_name,
+                fiscal_year=report.fiscal_year,
+                received_date=disclosure.received_date,
+                source_url=disclosure.viewer_url,
+                content_json="",
+                sections=",".join(used.found),
+                truncated=",".join(used.truncated),
+                input_tokens=in_tok,
+                output_tokens=0,
+                cost_micro_usd=0,
+                status=STATUS_PENDING,
+                error="",
+            )
+        )
+
+        return analysis_batch.build_request(
+            custom_id=custom_id_for(disclosure.receipt_no),
+            model=MODEL,
+            system=SYSTEM_PROMPT,
+            prompt=prompt,
+            output_model=ReportAnalysisContent,
+            max_tokens=MAX_OUTPUT_TOKENS,
+            effort=EFFORT,
+        )
+
+
+def mark_submitted(receipt_no: str, batch_id: str) -> None:
+    """대기 행에 배치 id 를 적는다. 제출이 끝난 뒤에만 부른다."""
+    with get_session() as session:
+        row = session.get(DartAnalysis, (receipt_no, MODEL, PROMPT_VERSION))
+        if row is not None:
+            row.batch_id = batch_id
+            session.commit()
+
+
+def pending_batch_ids() -> list[str]:
+    """결과를 기다리는 배치 id 들."""
+    with get_session() as session:
+        return list(
+            session.execute(
+                select(DartAnalysis.batch_id)
+                .where(DartAnalysis.status == STATUS_PENDING, DartAnalysis.batch_id != "")
+                .distinct()
+            ).scalars()
+        )
+
+
+def apply_outcome(outcome: analysis_batch.Outcome) -> bool:
+    """배치 결과 한 건을 대기 행에 덮어쓴다. 우리 행이 아니면 False."""
+    if not outcome.custom_id.startswith(CUSTOM_ID_PREFIX):
+        return False
+    receipt_no = outcome.custom_id[len(CUSTOM_ID_PREFIX) :]
+
+    with get_session() as session:
+        row = session.get(DartAnalysis, (receipt_no, MODEL, PROMPT_VERSION))
+        if row is None:
+            logger.warning("배치 결과에 맞는 행이 없다: %s", outcome.custom_id)
+            return False
+
+        row.input_tokens = outcome.input_tokens or row.input_tokens
+        row.output_tokens = outcome.output_tokens
+        row.cost_micro_usd = llm_budget.cost_micro_usd(
+            row.input_tokens, outcome.output_tokens, batch=True
+        )
+
+        # 실패 이유를 하나씩 좁혀 간다. 마지막까지 None 이면 성공이다.
+        # **어느 갈래로 빠지든 마지막에 한 번 커밋한다** — 갈래마다 커밋을 흩어 놓으면
+        # 하나를 빠뜨렸을 때 그 경우만 조용히 저장되지 않는다(실제로 한 번 그랬다).
+        failure: str | None = None
+        content = None
+
+        if not outcome.ok:
+            failure = outcome.error or "배치 처리에 실패했습니다."
+        else:
+            try:
+                content = analysis_batch.parse_content(outcome.text or "", ReportAnalysisContent)
+            except Exception as exc:  # noqa: BLE001 — 어떤 형식 오류든 행으로 남긴다
+                failure = f"분석 결과를 정해진 형식으로 받지 못했습니다: {type(exc).__name__}"
+
+        # 동기 경로와 같은 검사. 껍데기를 저장하면 캐시가 영원히 껍데기를 돌려준다.
+        if failure is None and content is not None and not _is_complete(content):
+            failure = "분석 결과가 비어 있어 저장하지 않았습니다."
+
+        if failure is not None:
+            row.status = STATUS_FAILED
+            row.error = failure
+        else:
+            row.content_json = content.model_dump_json()  # type: ignore[union-attr]
+            row.status = STATUS_OK
+            row.error = ""
+            logger.info(
+                "사업보고서 배치 분석 완료: %s FY%d · 입력 %d · 출력 %d · 추정 $%.3f",
+                row.corp_name,
+            row.fiscal_year,
+                row.input_tokens,
+                row.output_tokens,
+                row.cost_micro_usd / 1_000_000,
+            )
+
+        session.commit()
+        return True

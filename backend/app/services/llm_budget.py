@@ -25,6 +25,9 @@ from app.models.us_analysis import SecAnalysis
 PRICE_INPUT_PER_MTOK_USD = 3.0
 PRICE_OUTPUT_PER_MTOK_USD = 15.0
 
+# Batch API 는 모든 토큰이 반값이다. 자동 분석이 이 길로 간다(`analysis_batch.py`).
+BATCH_DISCOUNT = 0.5
+
 # 두 시장이 함께 쓰는 잠금. 한 번에 한 건만 분석한다.
 call_lock = asyncio.Lock()
 
@@ -33,11 +36,17 @@ class BudgetExceeded(Exception):
     """하루 상한에 도달. 메시지를 그대로 화면에 보여줄 수 있게 쓴다."""
 
 
-def cost_micro_usd(input_tokens: int, output_tokens: int) -> int:
-    """달러는 소수라 정수(100만분의 1달러)로 다룬다. float 로 두면 합계가 어긋난다."""
+def cost_micro_usd(input_tokens: int, output_tokens: int, *, batch: bool = False) -> int:
+    """달러는 소수라 정수(100만분의 1달러)로 다룬다. float 로 두면 합계가 어긋난다.
+
+    `batch=True` 는 Batch API 로 처리된 건이다 — **모든 토큰이 반값**이다
+    (입력·출력·캐시 전부). 밤에 도는 자동 분석이 이쪽을 쓴다.
+    """
     dollars = (
         input_tokens * PRICE_INPUT_PER_MTOK_USD + output_tokens * PRICE_OUTPUT_PER_MTOK_USD
     ) / 1_000_000
+    if batch:
+        dollars *= BATCH_DISCOUNT
     return round(dollars * 1_000_000)
 
 

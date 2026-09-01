@@ -20,7 +20,7 @@ from fastapi import APIRouter, HTTPException, Path, Query
 from pydantic import BaseModel, Field
 
 from app.clients.sec import SecError
-from app.models.us_analysis import STATUS_OK, SecAnalysis
+from app.models.us_analysis import STATUS_OK, STATUS_PENDING, SecAnalysis
 from app.services import llm_budget, sec_companies, tenk_analysis
 
 logger = logging.getLogger(__name__)
@@ -39,7 +39,9 @@ class RiskItemOut(BaseModel):
 class UsAnalysisOut(BaseModel):
     """분석 결과. `status` 로 세 가지 상태를 구분한다."""
 
-    status: str = Field(description="ok=분석 있음 / none=아직 안 함 / failed=실패")
+    status: str = Field(
+        description="ok=분석 있음 / none=아직 안 함 / pending=맡겨 둔 중 / failed=실패"
+    )
     ticker: str
 
     # status 가 ok 일 때만 채워진다.
@@ -80,6 +82,10 @@ def _split(value: str) -> list[str]:
 def _to_out(ticker: str, row: SecAnalysis | None) -> UsAnalysisOut:
     if row is None:
         return UsAnalysisOut(status="none", ticker=ticker)
+    # 배치에 맡겨 놓고 기다리는 중. **실패와 같은 칸에 묶지 않는다** — 사용자가
+    # 다시 누를 일이 아니고, 곷 나온다고 말해 줘야 한다.
+    if row.status == STATUS_PENDING:
+        return UsAnalysisOut(status="pending", ticker=row.ticker)
     if row.status != STATUS_OK:
         return UsAnalysisOut(status="failed", ticker=row.ticker, error=row.error)
 

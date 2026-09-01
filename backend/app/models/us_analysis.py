@@ -26,6 +26,9 @@ from app.models.base import Base
 
 STATUS_OK = "ok"
 STATUS_FAILED = "failed"
+# 배치로 맡겨 놓고 결과를 기다리는 중(`analysis_batch.py`). 돈은 이미 나간 것으로 친다 —
+# 그래야 하루 상한이 제출한 건수를 세고, 같은 문서를 두 번 맡기지 않는다.
+STATUS_PENDING = "pending"
 
 
 class SecAnalysis(Base):
@@ -60,6 +63,10 @@ class SecAnalysis(Base):
     output_tokens: Mapped[int] = mapped_column(Integer, default=0)
     # 달러는 소수라 부동소수점으로 두면 합계가 어긋난다. 100만분의 1달러 단위 정수로 넣는다.
     cost_micro_usd: Mapped[int] = mapped_column(Integer, default=0)
+
+    # 배치로 맡겼을 때의 배치 id. 이 값이 있고 status 가 pending 이면 결과를 기다리는
+    # 중이다. 끝나면 지우지 않고 남겨 둔다 — 어느 배치에서 나온 결과인지 나중에 추적할 수 있게.
+    batch_id: Mapped[str] = mapped_column(String(64), default="")
 
     # 실패도 남긴다. 남기지 않으면 화면을 열 때마다 같은 실패를 다시 시도하게 된다.
     status: Mapped[str] = mapped_column(String(10), default=STATUS_OK)

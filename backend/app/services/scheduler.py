@@ -24,6 +24,7 @@ from datetime import datetime, timedelta, timezone
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 
 from app.clients.dart import DartError
 from app.clients.krx import KrxError
@@ -50,6 +51,14 @@ UNIVERSE_MINUTE = 0
 AUTO_ANALYSIS_JOB_ID = "auto-analysis"
 AUTO_ANALYSIS_HOUR = 7
 AUTO_ANALYSIS_MINUTE = 30
+
+# 자동 분석은 결과를 기다리지 않고 배치로 맡기고 끝난다(반값). 그 결과를 주워 오는 주기.
+#
+# 배치는 보통 한 시간 안에 끝나고 최대 24시간이다. 20분마다 보면 대개 첫 시간 안에
+# 거두고, 늦어도 하루 안에는 들어온다. 대기 중인 배치가 없으면 DB 만 보고 끝나므로
+# 헛돈도 헛수고도 없다.
+BATCH_COLLECT_JOB_ID = "analysis-batch-collect"
+BATCH_COLLECT_MINUTES = 20
 
 # 확정 종가는 오후 1시 이후 공개된다. 정각에 붙으면 아직 안 올라와 있을 수 있어 여유를 둔다.
 RUN_HOUR = 13
@@ -154,6 +163,20 @@ class KrxScheduler:
             replace_existing=True,
         )
 
+        # 배치로 맡긴 분석 결과를 주워 온다. 맡긴 것이 없으면 아무 일도 하지 않는다.
+        # 보고서는 주말에 안 나오지만 **제출한 배치는 주말을 넘어 끝날 수 있으므로**
+        # 이쪽은 날짜를 가리지 않고 돌린다.
+        self._scheduler.add_job(
+            self._collect_batches,
+            IntervalTrigger(minutes=BATCH_COLLECT_MINUTES),
+            id=BATCH_COLLECT_JOB_ID,
+            name="분석 배치 결과 수거",
+            misfire_grace_time=600,
+            coalesce=True,
+            max_instances=1,
+            replace_existing=True,
+        )
+
         self._scheduler.start()
         logger.info("스케줄러 시작. 다음 정기 수집: %s", self.next_run_at)
 
@@ -165,6 +188,19 @@ class KrxScheduler:
             await auto_analysis.run()
         except Exception:
             logger.exception("자동 분석 실패 — 다음 주기에 다시 시도한다")
+
+    async def _collect_batches(self) -> None:
+        """맡긴 분석 결과 수거. **실패해도 서버를 흔들지 않는다.**
+
+        수거를 몷 해도 대기 행은 그대로 남아 다음 주기에 다시 둔다. 결과는 29일간
+        보관되므로 몇 번 놓쳐도 잃지 않는다.
+        """
+        from app.services import auto_analysis
+
+        try:
+            await auto_analysis.collect_pending()
+        except Exception:
+            logger.exception("배치 결과 수거 실패 — 다음 주기에 다시 시도한다")
 
     async def _load_universe(self) -> None:
         """유니버스 적재. **실패해도 서버를 흔들지 않는다** — 스크리너가 어제 자료로

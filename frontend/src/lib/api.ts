@@ -387,8 +387,8 @@ export type UsRiskItem = {
 }
 
 export type UsAnalysis = {
-  /** ok=분석 있음 / none=아직 안 함 / failed=실패 */
-  status: 'ok' | 'none' | 'failed'
+  /** ok=분석 있음 / none=아직 안 함 / pending=배치에 맡겨 둔 중 / failed=실패 */
+  status: 'ok' | 'none' | 'pending' | 'failed'
   ticker: string
   fiscal_year: number | null
   period_end: string | null
@@ -504,7 +504,8 @@ export type KrRiskItem = {
 }
 
 export type KrAnalysis = {
-  status: 'ok' | 'none' | 'failed'
+  /** ok=분석 있음 / none=아직 안 함 / pending=배치에 맡겨 둔 중 / failed=실패 */
+  status: 'ok' | 'none' | 'pending' | 'failed'
   stock_code: string
   corp_name: string | null
   report_name: string | null

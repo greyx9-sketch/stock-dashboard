@@ -110,6 +110,21 @@ export function TenKAnalysis({ ticker }: Props) {
           </div>
         )}
 
+        {/* 밤에 도는 자동 분석이 배치로 맡겨 둔 상태. **실패가 아니라 진행 중**이므로
+            다시 시도 버튼을 두지 않는다 — 누르면 반값이 아닌 값으로 한 번 더 사게 된다. */}
+        {!loading && !running && !error && analysis?.status === 'pending' && (
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2 text-sm text-neutral-300">
+              <span className="size-1.5 animate-pulse rounded-full bg-sky-400" />
+              자동 분석을 맡겨 두었습니다
+            </div>
+            <p className="text-xs text-neutral-500">
+              값이 반인 대신 결과가 늦게 옵니다. 보통 한 시간 안에, 늦어도 하루 안에
+              여기 채워집니다.
+            </p>
+          </div>
+        )}
+
         {!loading && !running && !error && analysis?.status === 'none' && (
           <div className="space-y-2">
             <p className="text-xs text-neutral-500">
