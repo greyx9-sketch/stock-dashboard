@@ -275,3 +275,19 @@ def test_outcome_for_the_other_market_is_ignored(_pending_row):
     )
     assert tenk_analysis.apply_outcome(outcome) is False
     assert _row(_pending_row).status == STATUS_PENDING
+
+
+def test_hitting_the_output_cap_says_so():
+    """출력 상한에 걸린 것과 형식이 깨진 것은 다르다.
+
+    상한에 걸리면 JSON 이 문장 한가운데서 잘려서 **형식 오류처럼 보인다.** 그대로 두면
+    스키마나 프롬프트를 뒤지게 되는데, 실제로는 상한을 올리면 되는 일이다.
+    확인 스크립트를 돌리다 실제로 이 함정에 빠져서 갈라 두었다.
+    """
+    outcome = analysis_batch._to_outcome(
+        _succeeded("us:A", '{"business_summary":"잘린', stop_reason="max_tokens")
+    )
+    assert not outcome.ok
+    assert "상한" in (outcome.error or "")
+    # 토큰은 실제로 썼으므로 기록에 남아야 한다 — 돈이 나갔다.
+    assert outcome.output_tokens == 200

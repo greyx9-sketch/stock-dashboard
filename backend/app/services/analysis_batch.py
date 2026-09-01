@@ -162,6 +162,18 @@ def _to_outcome(result: Any) -> Outcome:
                 usage.output_tokens,
                 "안전 정책에 따라 이 문서의 분석이 거절되었습니다. 원문 링크로 확인해 주세요.",
             )
+        # **출력 상한에 걸리면 JSON 이 문장 한가운데서 잘린다.** 그대로 파서에 넘기면
+        # "형식으로 받지 못했습니다"가 되어, 원인을 스키마나 프롬프트에서 찾게 된다.
+        # 실제로는 `max_tokens` 를 올리면 되는 일이라 여기서 갈라 말해 준다.
+        if message.stop_reason == "max_tokens":
+            return Outcome(
+                custom_id,
+                None,
+                usage.input_tokens,
+                usage.output_tokens,
+                "분석이 출력 상한에 걸려 중간에 끊겼습니다. 문서가 길거나 상한이 낮습니다.",
+            )
+
         text = next((b.text for b in message.content if b.type == "text"), None)
         if not text:
             return Outcome(

@@ -7,7 +7,7 @@
 요청 본문에 함께 넣는 것이 동기 호출과 똑같이 동작하는지는 한 번 보내 봐야 안다.
 
 그래서 여기서는 **진짜 스키마로, 아주 짧은 문서 하나만** 보낸다. 입력 몇백 토큰에
-출력 상한 500 이라 반값을 적용하면 1원 남짓이다. 실제 10-K(입력 4만 토큰)와 견주면
+출력 상한 4,000 이라 반값을 적용하면 1원 남짓이다. 실제 10-K(입력 4만 토큰)와 견주면
 백분의 일 수준이다.
 
 확인하는 것 넷:
@@ -52,7 +52,9 @@ and to wider retail distribution. Management notes that costs rose because of hi
 graphite prices.
 """
 
-MAX_OUTPUT_TOKENS = 500
+# 500 으로 뒀다가 출력이 잘려 JSON 이 깨졌다. 다섯 필드를 다 채우려면 이 정도는 있어야 한다.
+# 그래도 실제 10-K(입력 4만 토큰)와 견주면 백분의 일 수준이다.
+MAX_OUTPUT_TOKENS = 4_000
 POLL_SECONDS = 10
 GIVE_UP_AFTER = 15 * 60
 
