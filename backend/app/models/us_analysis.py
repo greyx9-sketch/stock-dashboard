@@ -66,7 +66,11 @@ class SecAnalysis(Base):
 
     # 배치로 맡겼을 때의 배치 id. 이 값이 있고 status 가 pending 이면 결과를 기다리는
     # 중이다. 끝나면 지우지 않고 남겨 둔다 — 어느 배치에서 나온 결과인지 나중에 추적할 수 있게.
-    batch_id: Mapped[str] = mapped_column(String(64), default="")
+    # `server_default` 가 **꼭 있어야 한다.** 파이썬 쪽 `default=` 는 DDL 에 안 나타나서,
+    # 이미 행이 있는 표에 NOT NULL 컬럼을 붙일 때 SQLite 가 "기존 행은 뭘로 채우냐"며
+    # 거절한다. 그러면 `schema_sync` 가 경고만 남기고 넘어가고, 그 뒤 이 표를 읽는
+    # 모든 조회가 `no such column` 500 이 된다 — 실제로 한 번 그렇게 배포했다.
+    batch_id: Mapped[str] = mapped_column(String(64), default="", server_default="")
 
     # 실패도 남긴다. 남기지 않으면 화면을 열 때마다 같은 실패를 다시 시도하게 된다.
     status: Mapped[str] = mapped_column(String(10), default=STATUS_OK)

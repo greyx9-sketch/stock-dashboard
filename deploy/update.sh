@@ -51,8 +51,9 @@ sudo systemctl daemon-reload
 sudo systemctl restart stock-dashboard
 
 echo "== 5/5 확인"
-# 뜨는 데 몇 초 걸린다. 될 때까지 잠깐 기다린다.
-for i in $(seq 1 20); do
+# 뜨는 데 몇십 초 걸린다 — DB 스키마 맞추기와 토스 웹소켓 연결이 먼저다.
+# 20초로 뒀다가 29초 걸린 배포에서 "서버가 응답하지 않는다"는 헛경보를 봤다.
+for i in $(seq 1 60); do
 	if curl -fsS http://127.0.0.1:8000/health >/dev/null 2>&1; then
 		echo "정상: $(curl -fsS http://127.0.0.1:8000/health)"
 		exit 0

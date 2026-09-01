@@ -182,3 +182,62 @@ def test_added_column_type_is_what_the_model_said(engine):
 def test_sqlite_version_supports_add_column():
     """이 헬퍼가 기대는 기능이 실제로 있는지 확인한다(ADD COLUMN 은 3.2 부터)."""
     assert sqlite3.sqlite_version_info >= (3, 2)
+
+
+# ---------------------------------------------------------------- 진짜 모델로 하는 확인
+#
+# 위 테스트들은 **헬퍼가 옳게 동작하는가**를 본다. 아래 하나는 다른 질문이다 —
+# **우리가 선언한 컬럼이 그 헬퍼를 통과하는가.**
+#
+# 2026-09-01 에 그 차이로 배포가 깨졌다. `batch_id` 를 `server_default` 없이 선언했더니
+# `add_missing_columns` 가 "NOT NULL 인데 채울 값이 없다"며 **경고만 남기고 건너뛰었고**,
+# 그 뒤 분석 조회가 전부 500(`no such column`)이 됐다. 테스트는 매번 빈 DB 를 새로 만들어
+# `create_all` 로 표를 통째로 만들었기 때문에 아무것도 잡지 못했다.
+#
+# 그래서 여기서는 **운영 DB 를 흉내 낸다** — 옛 표를 만들고, 행을 넣고, 새 모델로 맞춘다.
+
+
+def test_analysis_tables_can_gain_new_columns(engine):
+    """이미 행이 있는 분석 표에 새 컬럼이 실제로 붙는가.
+
+    분석 표를 고를 이유가 있다 — 여기 담긴 것은 **돈을 주고 산 결과**라 다시 만들 수 없고,
+    표를 새로 만드는 방식으로 도망칠 수도 없다.
+    """
+    from sqlalchemy import Column as SaColumn
+    from sqlalchemy import MetaData as SaMetaData
+    from sqlalchemy import Table as SaTable
+
+    # 모델을 import 해야 테이블 정의가 Base 에 등록된다.
+    from app.models import dart_analysis, us_analysis  # noqa: F401
+    from app.models.base import Base
+
+    for table_name in ("sec_analyses", "dart_analyses"):
+        real = Base.metadata.tables[table_name]
+
+        # `batch_id` 가 없던 시절의 표를 만든다.
+        old = SaMetaData()
+        SaTable(
+            table_name,
+            old,
+            *[
+                SaColumn(c.name, c.type, primary_key=c.primary_key, nullable=c.nullable)
+                for c in real.columns
+                if c.name != "batch_id"
+            ],
+        )
+        old.create_all(engine)
+
+        added = add_missing_columns(engine, Base.metadata)
+
+        have = {row[1] for row in sqlite3.connect(engine.url.database).execute(
+            f'PRAGMA table_info("{table_name}")'
+        )}
+        assert "batch_id" in have, (
+            f"{table_name}.batch_id 가 붙지 않았다. "
+            "NOT NULL 컬럼을 새로 만들 때는 server_default 를 반드시 준다."
+        )
+        assert f"{table_name}.batch_id" in added
+
+        # 붙기만 하고 못 읽으면 소용없다. 모든 컬럼을 실제로 조회해 본다.
+        with engine.connect() as conn:
+            conn.execute(real.select())
