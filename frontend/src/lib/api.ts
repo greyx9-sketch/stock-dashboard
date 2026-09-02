@@ -772,7 +772,8 @@ export type ScreenRow = {
   name: string
   market: string
   price: number
-  market_cap: number
+  /** 미국 줄은 주가를 못 받으면 시총도 낼 수 없어 빈다. 국내는 항상 있다. */
+  market_cap: number | null
   fiscal_year: number | null
   per: string | null
   pbr: string | null
@@ -814,6 +815,48 @@ export function fetchScreen(filters: ScreenFilters) {
 
 export function fetchPeers(symbol: string, limit = 10) {
   return get<ScreenResult>(`/api/screener/peers/${symbol}?limit=${limit}`)
+}
+
+/**
+ * 미국 스크리너. 조건은 국내와 같고 응답 모양만 다르다.
+ *
+ * 국내 줄에 있는 것 중 여기 없는 것: 시장 구분(KOSPI/KOSDAQ)과 주가 기준일.
+ * 미국에는 KRX 확정 종가 같은 물러설 자리가 없어 폴러가 받아 온 값을 그대로 쓴다.
+ * 그래서 `priced` 로 몇 개가 주가까지 받아졌는지 함께 알린다.
+ *
+ * 숫자가 문자열인 것은 `UsPeerRow` 와 같은 이유다 — 서버가 Decimal 로 계산한 값을
+ * 부동소수로 바꾸지 않고 그대로 넘긴다.
+ */
+export type UsScreenRow = {
+  ticker: string
+  name: string
+  price: string | null
+  market_cap: string | null
+  fiscal_year: number | null
+  per: string | null
+  pbr: string | null
+  roe: string | null
+  dividend_yield: string | null
+  revenue_growth: string | null
+}
+
+export type UsScreenResult = {
+  universe: number
+  matched: number
+  /** 주가까지 받아 온 회사 수. 이보다 적으면 일부 줄의 PER·시총이 비어 있다. */
+  priced: number
+  rows: UsScreenRow[]
+}
+
+export function fetchUsScreen(filters: ScreenFilters) {
+  const params = new URLSearchParams()
+  for (const [key, value] of Object.entries(filters)) {
+    // market 은 미국에 없는 조건이다. 보내면 422 가 난다.
+    if (key === 'market') continue
+    if (value === null || value === undefined || value === '') continue
+    params.set(key, String(value))
+  }
+  return get<UsScreenResult>(`/api/screener/us?${params}`)
 }
 
 /**

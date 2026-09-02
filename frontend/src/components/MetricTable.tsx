@@ -1,5 +1,5 @@
 import type { ScreenRow } from '../lib/api'
-import { formatBigWon } from '../lib/format'
+import { formatBigWon, formatUsd } from '../lib/format'
 import { DataTable, type Column } from './ui/DataTable'
 
 // 지표 표. 스크리너와 동종업계 비교가 **같은 표**를 쓴다.
@@ -14,6 +14,8 @@ import { DataTable, type Column } from './ui/DataTable'
 
 type Props = {
   rows: ScreenRow[]
+  /** 시가총액을 어느 통화로 적을지. 미국 스크리너·동종업계가 'USD' 를 준다. */
+  currency?: 'KRW' | 'USD'
   /** 이 종목 줄을 도드라지게 한다 (동종업계 비교에서 '나'를 표시). */
   highlight?: string
   onPick?: (symbol: string) => void
@@ -27,7 +29,7 @@ function cell(value: string | null, suffix = ''): string {
   return value === null ? '—' : `${value}${suffix}`
 }
 
-export function MetricTable({ rows, highlight, onPick, sort, desc, onSort }: Props) {
+export function MetricTable({ rows, currency = 'KRW', highlight, onPick, sort, desc, onSort }: Props) {
   const columns: Column<ScreenRow>[] = [
     {
       key: 'name',
@@ -51,7 +53,18 @@ export function MetricTable({ rows, highlight, onPick, sort, desc, onSort }: Pro
     // 일곱 열은 휴대폰에 안 들어간다. 시총·매출증가를 감추면 지표 네 열이 남아
     // 가로로 밀지 않고도 PER·PBR·ROE·배당을 한 눈에 볼 수 있다.
     num('revenue_growth', '매출증가', (row) => cell(row.revenue_growth, '%'), undefined, 'sm'),
-    num('market_cap', '시총', (row) => formatBigWon(row.market_cap), 'text-neutral-400', 'sm'),
+    num(
+      'market_cap',
+      '시총',
+      (row) =>
+        row.market_cap === null
+          ? '—'
+          : currency === 'USD'
+            ? formatUsd(row.market_cap)
+            : formatBigWon(row.market_cap),
+      'text-neutral-400',
+      'sm',
+    ),
   ]
 
   return (

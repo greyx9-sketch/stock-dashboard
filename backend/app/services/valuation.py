@@ -496,6 +496,10 @@ class UsScreenRow:
     per: Decimal | None
     pbr: Decimal | None
     roe: Decimal | None
+    # 국내 `ScreenRow` 와 자리를 맞춘다. 스크리너의 '고배당' 조건이 이 값을 쓴다.
+    # 국내는 DART 배당 공시를 따로 받아 두지만 미국은 10-K 재무에 주당배당금(dps)이
+    # 함께 들어 있어 같은 표에서 나온다.
+    dividend_yield: Decimal | None
     revenue_growth: Decimal | None
 
 
@@ -562,6 +566,13 @@ def us_screen_rows(tickers: list[str]) -> list[UsScreenRow]:
                     else None
                 ),
                 roe=_percent(income, equity) if equity and equity > 0 else None,
+                # 주당배당금 ÷ 주가. `compute_us` 와 같은 식이어야 상세 화면과
+                # 목록에서 같은 종목의 배당수익률이 다르게 보이지 않는다.
+                dividend_yield=(
+                    (Decimal(str(financial.dps)) / price * 100).quantize(CENT)
+                    if financial.dps is not None and price is not None and price > 0
+                    else None
+                ),
                 revenue_growth=(
                     _percent(financial.revenue - previous.revenue, previous.revenue)
                     if previous is not None

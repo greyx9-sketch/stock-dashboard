@@ -18,9 +18,13 @@ export function formatBigWon(value: number): string {
   return won.format(value)
 }
 
-/** 달러 금액을 B(십억)·M(백만) 단위로 줄인다. 미국 재무 수치용. */
+/** 달러 금액을 T(조)·B(십억)·M(백만) 단위로 줄인다. 미국 재무 수치용.
+ *
+ * T 가 없었다. 재무 수치에는 그만한 값이 안 나와서 드러나지 않았는데, 스크리너가
+ * 시가총액을 실으면서 엔비디아가 "$5275.6B" 로 나왔다. 자릿수를 세어야 읽히는 표기다. */
 export function formatUsd(value: number): string {
   const abs = Math.abs(value)
+  if (abs >= 1_000_000_000_000) return `$${(value / 1_000_000_000_000).toFixed(2)}T`
   if (abs >= 1_000_000_000) return `$${(value / 1_000_000_000).toFixed(1)}B`
   if (abs >= 1_000_000) return `$${(value / 1_000_000).toFixed(0)}M`
   return `$${won.format(Math.round(value))}`

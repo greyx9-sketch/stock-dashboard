@@ -26,7 +26,7 @@ from sqlalchemy import select, update
 
 from app.clients.sec import SecClient, SecError
 from app.models.base import get_session
-from app.models.us_company import SecCompany
+from app.models.us_company import SecCompany, SecFinancial
 from app.services import sec_companies, sec_financials
 
 logger = logging.getLogger(__name__)
@@ -103,6 +103,53 @@ def peers(ticker: str, limit: int = 12) -> list[str]:
             .limit(limit)
         ).scalars()
         return list(rows)
+
+
+# 상품신탁·ETF 의 SIC. 이 코드로 들어오는 것은 회사가 아니다 — 금 ETF(GLD·IAU),
+# 원유 ETF(USO), ProShares 레버리지 상품 따위다. 주당순이익이라는 것이 없으므로
+# PER 을 매기면 뜻 없는 숫자가 나온다.
+FUND_SIC = frozenset({"6221"})
+
+
+def screen_universe() -> list[str]:
+    """스크리너가 훑을 미국 종목. **한 회사에 한 줄만 나온다.**
+
+    두 가지를 거른다.
+
+    **1. 회사가 아닌 것.** SIC 6221 은 상품신탁·ETF 다(위 `FUND_SIC` 참고).
+
+    **2. 같은 회사의 다른 종이.** 미국은 우선주(`JPM-PC`)·워런트(`DAICW`)·ETN 이
+    본주와 **같은 CIK 를 쓴다.** SEC 재무는 CIK 단위라 그대로 두면 한 회사의 재무가
+    티커 수만큼 복제된다. 실제로 ProShares Trust II 하나가 티커 16개로, JPMorgan 이
+    9개로 들어와 있었다 — 74개처럼 보이던 것이 정리하면 38개다.
+
+    대표 티커는 **가장 짧은 것**을 고른다. 우선주·워런트는 본주 티커에 글자를 덧붙여
+    만들므로(JPM → JPM-PC, DAIC → DAICW) 짧은 쪽이 본주다. 길이가 같으면 사전순으로
+    끊는다 — 드물고, 어느 쪽이든 같은 회사의 같은 재무를 가리킨다.
+
+    재무와 발행주식수가 둘 다 있어야 넣는다. 하나라도 없으면 지표를 한 줄도 못 낸다.
+    """
+    with get_session() as session:
+        rows = session.execute(
+            select(SecCompany.cik, SecCompany.ticker)
+            .where(SecCompany.shares_outstanding.isnot(None))
+            .where(SecCompany.shares_outstanding > 0)
+            .where(
+                SecCompany.sic.is_(None) | SecCompany.sic.notin_(FUND_SIC)
+            )
+            .where(
+                select(SecFinancial.cik)
+                .where(SecFinancial.cik == SecCompany.cik)
+                .exists()
+            )
+        ).all()
+
+    best: dict[str, str] = {}
+    for cik, ticker in rows:
+        current = best.get(cik)
+        if current is None or (len(ticker), ticker) < (len(current), current):
+            best[cik] = ticker
+    return sorted(best.values())
 
 
 async def load(tickers: list[str]) -> UsLoadReport:
