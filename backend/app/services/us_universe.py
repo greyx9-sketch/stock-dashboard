@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 import math
+import re
 from decimal import Decimal
 
 from sqlalchemy import func, select, update
@@ -337,6 +338,71 @@ def not_loaded(tickers: list[str]) -> list[str]:
     return [t for t in tickers if t not in have]
 
 
+# 보통주가 아닌 증권을 이름으로 가린다. SEC 에는 증권 종류를 알려 주는 항목이 없고,
+# 티커 글자로도 알 수 없다. 토스가 주는 이름에는 또렷이 적혀 있다 —
+# "컴캐스트 홀딩스 우선주", "듀크 에너지 2078년 만기 후순위 채권".
+#
+# 이것을 쓰는 곳은 **시가총액을 합산할 때뿐이다**(`common_market_caps`).
+# 이름 표기가 바뀌어도 나머지 계산은 영향을 받지 않는다.
+NOT_COMMON = re.compile(r"우선주|채권|워런트|신주인수권|전환사채|권리")
+
+
+def common_market_caps() -> dict[str, Decimal]:
+    """보통주가 **둘 이상**인 회사의 시가총액. 그런 회사가 아니면 담지 않는다.
+
+    한 회사가 클래스 여럿으로 상장돼 있으면 한 클래스만 세어서는 시가총액이 안 된다.
+    버크셔가 그렇다 — A주 $369B, B주 $711B 로 합쳐야 $1,080B 다. 대표 티커 하나로
+    내면 3분의 1만 잡히고, 그러면 PER 도 3분의 1이 되어 '저PER' 맨 위로 올라온다.
+    마스터카드·Fox 와 같은 실패 방식이다.
+
+    **293곳 중 이런 회사는 버크셔 하나다.** 그래서 여기 담기는 것도 그 하나뿐이고,
+    나머지는 지금까지 하던 계산을 그대로 쓴다(`valuation.us_screen_rows`). 한 곳을
+    위해 292곳의 숫자가 달라지는 일은 없다.
+
+    우선주·채권은 자기자본이 아니므로 뺀다. 이것을 안 하면 우선주를 여럿 발행한
+    은행들의 시가총액이 부풀어 오른다.
+    """
+    with get_session() as session:
+        rows = session.execute(
+            select(
+                SecCompany.cik,
+                SecCompany.listed_name,
+                SecCompany.listed_shares,
+                SecCompany.last_close,
+            )
+            .where(SecCompany.listed_shares.isnot(None))
+            .where(SecCompany.last_close.isnot(None))
+        ).all()
+
+    by_cik: dict[str, list[Decimal]] = {}
+    for cik, name, shares, close in rows:
+        if name and NOT_COMMON.search(name):
+            continue
+        by_cik.setdefault(cik, []).append(Decimal(shares) * Decimal(close))
+
+    return {cik: sum(values) for cik, values in by_cik.items() if len(values) > 1}
+
+
+def _toss_aliases(tickers: list[str]) -> dict[str, str]:
+    """토스에 물어볼 표기 → 우리 티커.
+
+    **같은 종목을 서로 다른 문자로 부른다.** SEC 는 종류주식을 하이픈으로 쓰고
+    (`BRK-B`) 토스는 점으로 쓴다(`BRK.B`). 그대로 물으면 빈손으로 돌아오는데,
+    없는 종목과 구별이 안 되어 "토스가 다루지 않는 종목"으로 보인다. 실제로
+    버크셔가 그렇게 오해되어 주가도 시가총액도 없이 목록에 서 있었다.
+
+    두 표기를 모두 물어본다. 어느 쪽으로 답이 오든 우리 티커에 담는다 —
+    토스가 하이픈 표기를 쓰는 종목이 있어도 잃지 않는다. 시세는 200종목 한
+    묶음이라 물어볼 것이 몇십 개 늘어도 호출 한 번 차이다.
+    """
+    alias: dict[str, str] = {}
+    for ticker in tickers:
+        alias[ticker] = ticker
+        if "-" in ticker:
+            alias[ticker.replace("-", ".")] = ticker
+    return alias
+
+
 def closes_as_of() -> str | None:
     """받아 둔 주가 중 가장 늦은 시각. 화면이 "언제 값인지"를 밝히는 데 쓴다.
 
@@ -360,31 +426,33 @@ async def refresh_listed_shares(tickers: list[str]) -> int:
     """
     if not tickers:
         return 0
+    alias = _toss_aliases(tickers)
+    asked = sorted(alias)
     saved = 0
     async with TossClient() as toss:
-        for start in range(0, len(tickers), PRICE_CHUNK):
-            chunk = tickers[start : start + PRICE_CHUNK]
+        for start in range(0, len(asked), PRICE_CHUNK):
+            chunk = asked[start : start + PRICE_CHUNK]
             try:
                 rows = await toss.get_stocks(chunk)
             except TossError:
                 logger.warning("상장주식수 갱신 실패 — %s 외 %d종목", chunk[0], len(chunk) - 1)
                 continue
-            saved += await asyncio.to_thread(_save_listed_shares, rows)
+            saved += await asyncio.to_thread(_save_listed_shares, rows, alias)
     return saved
 
 
-def _save_listed_shares(rows: list[dict]) -> int:
+def _save_listed_shares(rows: list[dict], alias: dict[str, str]) -> int:
     saved = 0
     with get_session() as session:
         for row in rows:
-            ticker = row.get("symbol")
+            ticker = alias.get(row.get("symbol"))
             shares = row.get("sharesOutstanding")
             if not ticker or shares in (None, ""):
                 continue
             result = session.execute(
                 update(SecCompany)
                 .where(SecCompany.ticker == ticker)
-                .values(listed_shares=int(shares))
+                .values(listed_shares=int(shares), listed_name=row.get("name"))
             )
             saved += result.rowcount or 0
         session.commit()
@@ -405,25 +473,27 @@ async def refresh_closes(tickers: list[str]) -> int:
         return 0
 
     now = datetime.now(timezone.utc)
+    alias = _toss_aliases(tickers)
+    asked = sorted(alias)
     saved = 0
     async with TossClient() as toss:
-        for start in range(0, len(tickers), PRICE_CHUNK):
-            chunk = tickers[start : start + PRICE_CHUNK]
+        for start in range(0, len(asked), PRICE_CHUNK):
+            chunk = asked[start : start + PRICE_CHUNK]
             try:
                 rows = await toss.get_prices(chunk)
             except TossError:
                 # 한 묶음이 실패해도 나머지는 받는다. 값이 없는 종목은 지표가 빌 뿐이다.
                 logger.warning("미국 종가 갱신 실패 — %s 외 %d종목", chunk[0], len(chunk) - 1)
                 continue
-            saved += await asyncio.to_thread(_save_closes, rows, now)
+            saved += await asyncio.to_thread(_save_closes, rows, now, alias)
     return saved
 
 
-def _save_closes(rows: list[dict], at: datetime) -> int:
+def _save_closes(rows: list[dict], at: datetime, alias: dict[str, str]) -> int:
     saved = 0
     with get_session() as session:
         for row in rows:
-            ticker = row.get("symbol")
+            ticker = alias.get(row.get("symbol"))
             price = row.get("lastPrice")
             if not ticker or price in (None, ""):
                 continue

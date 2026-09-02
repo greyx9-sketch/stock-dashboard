@@ -44,6 +44,7 @@ from app.models.dividend import DartDividend
 from app.models.financial import DartFinancial
 from app.models.quote import KrxDailyQuote
 from app.services import dividends as dividends_service
+from app.services import us_universe
 from app.services.price_poller import poller
 
 # 소수 둘째 자리까지. 배수(PER·PBR)와 백분율(배당수익률) 모두 그 정도면 충분하다.
@@ -392,8 +393,31 @@ class UsValuation:
 
 
 def _us_price(ticker: str) -> Decimal | None:
+    """이 종목의 주가. 폴러가 들고 있는 것을 먼저, 없으면 받아 둔 종가로.
+
+    **폴러가 못 받는 종목이 있다.** 종류주식을 SEC 는 하이픈으로(`BRK-A`), 토스는
+    점으로(`BRK.A`) 쓰는데 폴러는 우리 티커를 그대로 물어본다. 그래서 버크셔는
+    현재가가 영영 오지 않고, 그러면 밸류에이션 전체가 "낼 수 없습니다"가 되어
+    **목록에는 있는데 눌러도 안 열리는 줄**이 된다.
+
+    야간에 받아 둔 종가는 그 표기를 맞춰서 받는다(`us_universe._toss_aliases`).
+    실시간만큼 새것은 아니지만, PER·PBR 은 분기 재무를 분모로 쓰는 값이라
+    몇 시간 묵은 주가로도 뜻이 상하지 않는다. 화면의 '현재가'는 이 값이 아니라
+    실시간 시세를 따로 받아 그린다.
+
+    폴러 자체를 고치는 편이 근본이지만 그쪽은 웹소켓 구독까지 얽혀 있어
+    따로 손봐야 한다.
+    """
     cached = poller.snapshot([ticker]).get(ticker)
-    return cached.last_price if cached else None
+    if cached is not None:
+        return cached.last_price
+
+    from app.models.us_company import SecCompany
+
+    with get_session() as session:
+        return session.execute(
+            select(SecCompany.last_close).where(SecCompany.ticker == ticker)
+        ).scalar()
 
 
 def us_shares(company) -> int | None:
@@ -437,7 +461,17 @@ def compute_us(ticker: str) -> UsValuation | None:
         return None
 
     shares = us_shares(company)
-    market_cap = price * Decimal(shares)
+    # **주식수의 기준일은 그 수를 준 쪽의 것이어야 한다.** SEC 값을 쓰면 10-K 표지
+    # 날짜(`shares_as_of`)가 맞지만, 토스의 상장주식수를 쓰면서 SEC 날짜를 그대로
+    # 붙이면 "488,450주 · 2011-04-29 기준"처럼 서로 다른 출처가 한 줄에 섞인다.
+    # 화면이 이 날짜를 근거로 내세우는 자리라 조용히 틀리면 알아채기 어렵다.
+    shares_as_of = company.shares_as_of
+    if company.listed_shares and company.last_close_at:
+        shares_as_of = company.last_close_at.date().isoformat()
+
+    # 목록(`us_screen_rows`)과 같은 값이어야 한다. 같은 종목의 시가총액이 화면마다
+    # 다르면 어느 쪽을 믿어야 할지 알 수 없다.
+    market_cap = us_universe.common_market_caps().get(company.cik) or price * Decimal(shares)
 
     eps = bps = dps = None
     per = pbr = dividend_yield = None
@@ -479,7 +513,7 @@ def compute_us(ticker: str) -> UsValuation | None:
         name=company.name,
         price=price,
         shares_outstanding=shares,
-        shares_as_of=company.shares_as_of,
+        shares_as_of=shares_as_of,
         market_cap=market_cap,
         fiscal_year=fiscal_year,
         period_end=period_end,
@@ -562,6 +596,10 @@ def us_screen_rows(tickers: list[str], *, prefer_live: bool = True) -> list[UsSc
     # 등록하지 않아도 지표가 나오게 하려는 것이다 — 등록하면 웹소켓 구독 한도를
     # 스크리너가 먹어 치워 사용자가 보던 종목이 실시간에서 밀려난다.
     prices = poller.snapshot(tickers)
+    # 보통주가 둘 이상인 회사만 담겨 온다. 그런 회사는 대표 티커 하나로 시가총액을
+    # 낼 수 없다 — 버크셔는 A주만 세면 3분의 1이다. 293곳 중 한 곳뿐이라
+    # 나머지는 아래 기존 계산을 그대로 지난다.
+    multi_class = us_universe.common_market_caps()
 
     out: list[UsScreenRow] = []
     for company in companies:
@@ -572,7 +610,9 @@ def us_screen_rows(tickers: list[str], *, prefer_live: bool = True) -> list[UsSc
         cached = prices.get(company.ticker)
         price = cached.last_price if cached else company.last_close
         shares = us_shares(company)
-        market_cap = price * Decimal(shares) if price is not None and shares else None
+        market_cap = multi_class.get(company.cik)
+        if market_cap is None:
+            market_cap = price * Decimal(shares) if price is not None and shares else None
 
         # us-gaap 은 이미 지배주주 기준이다(`NetIncomeLoss` 가 모회사 몫).
         income = financial.net_income

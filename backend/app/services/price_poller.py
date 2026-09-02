@@ -470,12 +470,28 @@ class PricePoller:
         return base
 
     async def _fetch_prices(self, toss: TossClient, symbols: list[str]) -> None:
-        """관심 종목의 현재가를 받아 캐시를 갱신한다. 200 개씩 끊어 부른다."""
+        """관심 종목의 현재가를 받아 캐시를 갱신한다. 200 개씩 끊어 부른다.
+
+        **종류주식은 표기가 갈린다.** SEC 는 하이픈으로(`BRK-A`), 토스는 점으로
+        (`BRK.A`) 쓴다. 우리 티커는 SEC 를 따르므로 그대로 물으면 빈손으로 오고,
+        없는 종목과 구별이 안 되어 "토스가 다루지 않는 종목"으로 보인다. 실제로
+        버크셔의 현재가 칸이 영영 로딩 상태로 남았다.
+
+        두 표기를 함께 물어보고 어느 쪽으로 답이 오든 우리 티커로 담는다 —
+        토스가 하이픈 표기를 쓰는 종목이 있어도 잃지 않는다.
+        """
         fetched_at = datetime.now(timezone.utc)
-        for start in range(0, len(symbols), MAX_SYMBOLS_PER_CALL):
-            chunk = symbols[start : start + MAX_SYMBOLS_PER_CALL]
+        # 물어볼 표기 → 우리 티커. `us_universe._toss_aliases` 와 같은 규칙이다.
+        alias = {s: s for s in symbols}
+        for symbol in symbols:
+            if "-" in symbol:
+                alias[symbol.replace("-", ".")] = symbol
+        asked = sorted(alias)
+
+        for start in range(0, len(asked), MAX_SYMBOLS_PER_CALL):
+            chunk = asked[start : start + MAX_SYMBOLS_PER_CALL]
             for row in await toss.get_prices(chunk):
-                symbol = row.get("symbol")
+                symbol = alias.get(row.get("symbol"))
                 raw = row.get("lastPrice")
                 if not symbol or raw is None:
                     continue

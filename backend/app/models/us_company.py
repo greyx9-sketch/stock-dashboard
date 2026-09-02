@@ -60,6 +60,10 @@ class SecCompany(Base):
     # 가리는 데 쓴다. 티커 글자만으로는 알 수 없다(`us_universe.screen_universe`).
     # 컴캐스트는 우선주 CCZ 가 258만주, 본주 CMCSA 가 35억주다.
     listed_shares: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+
+    # 이 티커의 증권 이름(토스 기준). 보통주인지 우선주·채권인지 가리는 데 쓴다.
+    # SEC 자료에는 증권 종류를 알려 주는 항목이 없다.
+    listed_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
     last_close_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
