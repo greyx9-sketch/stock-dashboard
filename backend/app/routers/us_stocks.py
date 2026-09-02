@@ -34,7 +34,24 @@ _submissions_cache: dict[str, tuple[float, dict]] = {}
 
 # 랭킹은 장중에 계속 바뀐다. 짧게만 캐시해 화면을 여러 번 열어도 토스를 반복해서 부르지 않게 한다.
 RANKING_TTL_SEC = 60.0
-_ranking_cache: dict[int, tuple[float, list]] = {}
+# 정렬 기준마다 다른 목록이므로 캐시도 기준별로 갈라 둔다. 예전에는 `limit` 만으로
+# 갈라서, 기준을 바꿔도 60초 동안 이전 목록이 그대로 나왔을 것이다.
+_ranking_cache: dict[tuple[str, int], tuple[float, list]] = {}
+
+# 화면의 정렬 기준 → 토스 랭킹 종류.
+#
+# **국내와 달리 정렬을 바꾸면 종목 자체가 바뀐다.** 국내는 전 종목 시세를 DB 에
+# 들고 있어 같은 2,873 종목을 다시 줄 세우지만, 미국은 목록의 출처가 토스 랭킹이라
+# "거래대금 상위 100"과 "거래량 상위 100"이 애초에 다른 100개다. 화면이 그 사실을 밝힌다.
+#
+# 시가총액 순은 없다. 토스 랭킹에 그 종류가 없고, 미국 상장사 전체의 시가총액을
+# 들고 있지도 않다(스크리너가 보는 것은 매출 상위 300개뿐이다).
+US_SORTS: dict[str, str] = {
+    "trade_value": "MARKET_TRADING_AMOUNT",
+    "volume": "MARKET_TRADING_VOLUME",
+    "gainers": "TOP_GAINERS",
+    "losers": "TOP_LOSERS",
+}
 
 # 10-K(연차)·10-Q(분기)·8-K(수시)가 실제로 읽을 가치가 있는 공시다.
 # 나머지(폼 4 내부자 거래 등)는 국내 지분공시처럼 목록을 덮어 버린다.
@@ -183,11 +200,18 @@ async def top_us_symbols(count: int) -> list[str]:
     return [r["symbol"] for r in (data.get("rankings") or []) if r.get("symbol")]
 
 
-@router.get("/list", summary="미국 종목 목록 (거래대금 상위)")
+@router.get("/list", summary="미국 종목 목록 (랭킹 상위)")
 async def list_us_stocks(
     limit: int = Query(50, ge=1, le=100, description="가져올 종목 수"),
+    sort: str = Query(
+        "trade_value", description=" / ".join(US_SORTS), examples=["trade_value"]
+    ),
 ) -> list[UsListItem]:
-    """토스증권 거래대금 상위 랭킹으로 목록을 만든다.
+    """토스증권 랭킹으로 목록을 만든다. 기본은 거래대금 상위다.
+
+    **정렬을 바꾸면 줄 순서가 아니라 종목이 바뀐다.** 국내는 전 종목 시세를 DB 에
+    들고 있어 같은 종목을 다시 줄 세우지만, 미국은 목록의 출처가 랭킹이라
+    "거래대금 상위 100"과 "거래량 상위 100"이 애초에 다른 100개다.
 
     국내와 달리 KRX 확정 종가 같은 별도 기준가 소스가 없다. 대신 토스 랭킹이 기준가
     (`basePrice`)를 직접 내려주므로 그것을 그대로 쓴다 — 국내에서 랭킹 기준가가 앱 화면과
@@ -196,14 +220,22 @@ async def list_us_stocks(
     ETF 가 상위권에 많이 올라온다(SOXL·QQQ 등). 걸러내지 않고 구분만 표시한다 —
     실제로 거래대금이 큰 것이 사실이고, 감추면 목록이 현실과 달라진다.
     """
+    ranking_type = US_SORTS.get(sort)
+    if ranking_type is None:
+        raise HTTPException(
+            status_code=422, detail=f"정렬 기준은 {', '.join(US_SORTS)} 중 하나입니다."
+        )
+
     now = time.monotonic()
-    cached = _ranking_cache.get(limit)
+    cached = _ranking_cache.get((sort, limit))
     if cached and now - cached[0] < RANKING_TTL_SEC:
         return cached[1]
 
     try:
         async with TossClient() as toss:
-            data = await toss.get_rankings(market_country="US", count=limit)
+            data = await toss.get_rankings(
+                ranking_type=ranking_type, market_country="US", count=limit
+            )
             rows = data.get("rankings") or []
             symbols = [r["symbol"] for r in rows if r.get("symbol")]
             # 랭킹 응답에는 이름이 없다. 종목 정보를 따로 받아 붙인다.
@@ -244,7 +276,7 @@ async def list_us_stocks(
             )
         )
 
-    _ranking_cache[limit] = (now, items)
+    _ranking_cache[(sort, limit)] = (now, items)
     return items
 
 

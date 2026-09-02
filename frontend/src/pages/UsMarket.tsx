@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { fetchUsList, searchUsStocks } from '../lib/api'
+import { fetchUsList, searchUsStocks, type UsSort } from '../lib/api'
 import type { UsListItem } from '../lib/api'
 import type { Section } from '../lib/useRoute'
 import { useLivePrices } from '../lib/useLivePrices'
@@ -8,6 +8,7 @@ import { UsDetailPanel } from '../components/UsDetailPanel'
 import { MarketBadge } from '../components/MarketBadge'
 import { Announce, ErrorBox } from '../components/ui/Status'
 import { SplitView } from '../components/ui/SplitView'
+import { Segmented } from '../components/ui/Segmented'
 
 // 미국 시장 화면.
 //
@@ -25,8 +26,18 @@ type Props = {
   onSection: (section: Section) => void
 }
 
+// 국내(`KrMarket`)의 정렬 선택과 같은 자리·같은 부품이다. 담기는 것만 다르다 —
+// 시가총액 순이 없고(토스 랭킹에 그 종류가 없다) 대신 등락률이 상승·하락으로 갈린다.
+const SORT_OPTIONS = [
+  { value: 'trade_value', label: '거래대금' },
+  { value: 'volume', label: '거래량' },
+  { value: 'gainers', label: '상승률' },
+  { value: 'losers', label: '하락률' },
+] as const satisfies readonly { value: UsSort; label: string }[]
+
 export function UsMarket({ symbol, section, onSelect, onSection }: Props) {
   const [stocks, setStocks] = useState<UsListItem[]>([])
+  const [sort, setSort] = useState<UsSort>('trade_value')
   const [keyword, setKeyword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -62,7 +73,7 @@ export function UsMarket({ symbol, section, onSelect, onSection }: Props) {
               currency: 'USD',
             })),
           )
-        : fetchUsList(LIST_LIMIT)
+        : fetchUsList(LIST_LIMIT, sort)
 
       request
         .then((result) => {
@@ -90,7 +101,7 @@ export function UsMarket({ symbol, section, onSelect, onSection }: Props) {
       cancelled = true
       clearTimeout(timer)
     }
-  }, [keyword, onSelect])
+  }, [keyword, sort, onSelect])
 
   const watchedSymbols = useMemo(() => {
     const symbols = stocks.map((s) => s.symbol)
@@ -119,7 +130,7 @@ export function UsMarket({ symbol, section, onSelect, onSection }: Props) {
     ? ''
     : trimmedKeyword !== ''
       ? `“${trimmedKeyword}” 검색 결과 ${stocks.length}건`
-      : `거래대금 상위 ${stocks.length}종목`
+      : `${SORT_OPTIONS.find((o) => o.value === sort)?.label} 상위 ${stocks.length}종목`
 
   return (
     <div>
@@ -130,7 +141,7 @@ export function UsMarket({ symbol, section, onSelect, onSection }: Props) {
         <p className="mt-1 text-sm text-neutral-400">
           {keyword.trim()
             ? 'SEC 등록 기업 검색 결과'
-            : '토스증권 거래대금 상위 · 재무와 공시는 SEC EDGAR'}
+            : `토스증권 ${SORT_OPTIONS.find((o) => o.value === sort)?.label} 상위 · 재무와 공시는 SEC EDGAR`}
         </p>
       </header>
 
@@ -147,6 +158,17 @@ export function UsMarket({ symbol, section, onSelect, onSection }: Props) {
           placeholder="티커 또는 회사명 검색 (예: AAPL, Apple)"
           className="w-72 rounded-md border border-neutral-800 bg-neutral-900 px-3 py-1.5 text-sm placeholder:text-neutral-600 focus:border-neutral-600"
         />
+        {/* 검색 중에는 감춘다. 검색 결과는 랭킹이 아니라 SEC 기업 목록이라
+            정렬 기준이 걸리지 않는다 — 국내 화면과 같은 규칙이다. */}
+        {keyword.trim() === '' && (
+          <Segmented
+            size="md"
+            label="정렬 기준"
+            options={SORT_OPTIONS}
+            value={sort}
+            onChange={(next) => setSort(next as UsSort)}
+          />
+        )}
         {loading && <span className="text-xs text-neutral-500">불러오는 중…</span>}
       </div>
 

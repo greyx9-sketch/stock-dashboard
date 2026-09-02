@@ -351,8 +351,17 @@ export type UsFilingItem = {
   viewer_url: string
 }
 
-export function fetchUsList(limit = 50) {
-  return get<UsListItem[]>(`/api/us/list?limit=${limit}`)
+/**
+ * 미국 종목 목록.
+ *
+ * **정렬을 바꾸면 줄 순서가 아니라 종목이 바뀐다.** 국내는 전 종목 시세를 DB 에
+ * 들고 있어 같은 종목을 다시 줄 세우지만, 미국은 목록의 출처가 토스 랭킹이라
+ * "거래대금 상위 100"과 "거래량 상위 100"이 애초에 다른 100개다.
+ */
+export type UsSort = 'trade_value' | 'volume' | 'gainers' | 'losers'
+
+export function fetchUsList(limit = 50, sort: UsSort = 'trade_value') {
+  return get<UsListItem[]>(`/api/us/list?limit=${limit}&sort=${sort}`)
 }
 
 /** 검색은 SEC 티커 목록에서 찾는다. 시세가 아니라 회사 식별 정보만 돌아온다. */
