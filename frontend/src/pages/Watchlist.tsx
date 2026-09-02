@@ -12,6 +12,7 @@ import {
   formatWon,
 } from '../lib/format'
 import { MarketBadge } from '../components/MarketBadge'
+import GlassButton from '../components/ui/GlassButton'
 import { StockDetailPanel } from '../components/StockDetailPanel'
 import { UsDetailPanel } from '../components/UsDetailPanel'
 import { ErrorBox } from '../components/ui/Status'
@@ -203,13 +204,13 @@ export function Watchlist({ symbol, section, onSelect, onSection }: Props) {
           placeholder="코드로 담기 (005930 / AAPL)"
           className="w-56 rounded-md border border-neutral-800 bg-neutral-900 px-3 py-1.5 text-sm placeholder:text-neutral-600 focus:border-neutral-600"
         />
-        <button
+        <GlassButton
           type="submit"
+          label="담기"
           disabled={adding || input.trim() === ''}
-          className="rounded-md bg-neutral-100 px-3 py-1.5 text-sm text-neutral-900 transition-colors hover:bg-white disabled:opacity-40"
-        >
-          담기
-        </button>
+          colors={{ fill: '#FFFFFF', textColor: '#FFFFFF' }}
+          font={{ fontWeight: 600, fontSize: 15 }}
+        />
         {addError && <span className="text-xs text-red-400">{addError}</span>}
       </form>
 

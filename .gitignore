@@ -29,3 +29,6 @@ Thumbs.db
 
 # Playwright 로 화면을 확인할 때 생기는 임시 파일
 .playwright-mcp/
+
+# Originkit CLI 가 만드는 에이전트·자격증명 임시 폴더
+.originkit/
