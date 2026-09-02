@@ -7,6 +7,7 @@ import { MacroStrip } from './components/MacroStrip'
 import { UpcomingEvents } from './components/UpcomingEvents'
 import { SystemBanner } from './components/SystemBanner'
 import { Segmented } from './components/ui/Segmented'
+import { PulseLines } from './components/ui/PulseLines'
 import { useRoute, type Tab } from './lib/useRoute'
 
 // 화면 전체의 껍데기. 어느 화면을 보고 있는지는 **주소가 들고 있다**(`lib/useRoute`).
@@ -35,6 +36,10 @@ export default function App() {
 
   return (
     <>
+      {/* 화면 전체 뒤에 깔리는 층. 본문보다 아래(z-index: -1)에 고정돼 있어
+          스크롤해도 따라오지 않고, 클릭도 가로채지 않는다. */}
+      <PulseLines />
+
       {/* 고장 알림은 맨 위에 둔다. 숫자가 이상해 보일 때 원인을 먼저 보게 하려는 것이다. */}
       <SystemBanner />
 

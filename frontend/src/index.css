@@ -149,3 +149,29 @@ select:focus-visible {
     animation: none;
   }
 }
+
+/* ── 배경을 타고 흐르는 맥박 (PulseLines) ─────────────────────────────
+   딱 한 주기만큼 내려보낸다. 무늬가 그 거리마다 반복되므로 끝나는 순간이
+   시작과 같은 그림이고, 그래서 되감기는 것이 보이지 않는다.
+
+   여기도 도는 것은 transform 뿐이다. 배경 위치(background-position)를 움직이면
+   전체 화면 층을 매 프레임 다시 칠하게 되지만, transform 은 합성 단계에서
+   끝난다 — 뒤에 깔린 층이 앞의 표와 프레임을 다투면 안 된다. */
+@keyframes ok-pulse-run {
+  to {
+    transform: translateY(var(--ok-pulse-period));
+  }
+}
+
+.ok-pulse-run {
+  animation-name: ok-pulse-run;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+/* 움직임을 줄여 달라는 설정이면 흐르지 않는다. 정지한 격자는 남는다. */
+@media (prefers-reduced-motion: reduce) {
+  .ok-pulse-run {
+    animation: none;
+  }
+}
