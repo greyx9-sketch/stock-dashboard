@@ -396,6 +396,25 @@ def _us_price(ticker: str) -> Decimal | None:
     return cached.last_price if cached else None
 
 
+def us_shares(company) -> int | None:
+    """시가총액·EPS 를 낼 때 쓸 주식수. **한 회사의 전체 주식수여야 한다.**
+
+    SEC 가 주는 `dei:EntityCommonStockSharesOutstanding` 은 10-K 표지에 적힌
+    **종류주식별** 수다. 클래스가 하나뿐인 회사는 그것이 곧 전체지만, 여럿이면
+    한 종류의 수만 들어온다. 그대로 시가총액을 내면 통째로 축소된다 —
+    마스터카드가 7.2배, 비자가 4.0배, 나이키·컴캐스트가 1.7배 작게 잡혔다.
+
+    **이것이 가장 나쁜 방식으로 드러난다.** 시총이 작으면 PER 도 작고, 스크리너에서
+    'PER 낮은 순'으로 세우면 틀린 값들이 맨 위로 올라온다. 실제로 마스터카드가
+    PER 4.78 로 두 번째 줄에 있었다. 값이 비는 것과 달리 틀린 값은 사람이 믿는다.
+
+    그래서 토스가 티커별로 주는 상장주식수를 먼저 쓴다. 이쪽은 회사 전체 수다
+    (컴캐스트 35.5억주 = A주 + B주). 없으면 SEC 값으로 물러선다 — 유니버스 밖
+    종목은 아직 받아 두지 않았고, 클래스가 하나인 회사는 두 값이 같다.
+    """
+    return company.listed_shares or company.shares_outstanding
+
+
 def compute_us(ticker: str) -> UsValuation | None:
     """미국 종목의 밸류에이션. 주가나 주식수가 없으면 None."""
     from app.models.us_company import SecCompany, SecFinancial
@@ -404,7 +423,7 @@ def compute_us(ticker: str) -> UsValuation | None:
         company = session.execute(
             select(SecCompany).where(SecCompany.ticker == ticker)
         ).scalars().first()
-        if company is None or not company.shares_outstanding:
+        if company is None or not us_shares(company):
             return None
         financial = session.execute(
             select(SecFinancial)
@@ -417,7 +436,7 @@ def compute_us(ticker: str) -> UsValuation | None:
     if price is None:
         return None
 
-    shares = company.shares_outstanding
+    shares = us_shares(company)
     market_cap = price * Decimal(shares)
 
     eps = bps = dps = None
@@ -503,8 +522,16 @@ class UsScreenRow:
     revenue_growth: Decimal | None
 
 
-def us_screen_rows(tickers: list[str]) -> list[UsScreenRow]:
-    """여러 미국 종목의 지표를 한꺼번에. 재무가 없는 종목은 빠진다."""
+def us_screen_rows(tickers: list[str], *, prefer_live: bool = True) -> list[UsScreenRow]:
+    """여러 미국 종목의 지표를 한꺼번에. 재무가 없는 종목은 빠진다.
+
+    `prefer_live` — 폴러가 들고 있는 현재가를 먼저 볼지.
+
+    **동종업계 비교는 참, 스크리너는 거짓이다.** 비교는 몇 종목뿐이라 값이 올 때까지
+    기다릴 수 있고 새 값일수록 좋다. 스크리너는 수백 줄을 **나란히 놓고 견주는**
+    화면이라 그럴 수 없다 — 어떤 줄은 방금 체결가, 어떤 줄은 어젯밤 종가면 PER 을
+    같은 자로 잰 것이 아니게 된다. 국내가 KRX 확정 종가로 통일하는 것과 같은 이유다.
+    """
     from app.models.us_company import SecCompany, SecFinancial
 
     if not tickers:
@@ -530,6 +557,10 @@ def us_screen_rows(tickers: list[str]) -> list[UsScreenRow]:
             latest.setdefault(row.cik, row)
             by_year[(row.cik, row.fiscal_year)] = row
 
+    # 폴러가 마침 들고 있는 값이 있으면 그것이 가장 새것이다. 없으면 미리 받아 둔
+    # 종가로 물러선다(`us_universe.refresh_closes`). 스크리너가 수백 종목을 폴러에
+    # 등록하지 않아도 지표가 나오게 하려는 것이다 — 등록하면 웹소켓 구독 한도를
+    # 스크리너가 먹어 치워 사용자가 보던 종목이 실시간에서 밀려난다.
     prices = poller.snapshot(tickers)
 
     out: list[UsScreenRow] = []
@@ -539,8 +570,8 @@ def us_screen_rows(tickers: list[str]) -> list[UsScreenRow]:
             continue
 
         cached = prices.get(company.ticker)
-        price = cached.last_price if cached else None
-        shares = company.shares_outstanding
+        price = cached.last_price if cached else company.last_close
+        shares = us_shares(company)
         market_cap = price * Decimal(shares) if price is not None and shares else None
 
         # us-gaap 은 이미 지배주주 기준이다(`NetIncomeLoss` 가 모회사 몫).

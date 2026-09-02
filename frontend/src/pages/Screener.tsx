@@ -13,6 +13,7 @@ import { StockDetailPanel } from '../components/StockDetailPanel'
 import { UsDetailPanel } from '../components/UsDetailPanel'
 import type { Section } from '../lib/useRoute'
 import { useLivePrices } from '../lib/useLivePrices'
+import { formatTimestamp } from '../lib/format'
 import { Card } from '../components/ui/Card'
 import { Segmented } from '../components/ui/Segmented'
 import { SplitView } from '../components/ui/SplitView'
@@ -313,11 +314,18 @@ export function Screener({ symbol, section, onSelect, onSection }: Props) {
                         주가는 <span className="tabular">{result?.trade_date}</span> 확정 종가
                       </>
                     ) : (
-                      // 미국에는 확정 종가가 없다. 대신 몇 개가 주가까지 받아졌는지 밝힌다 —
-                      // 못 받은 줄은 PER·시총이 비어 조건에서 저절로 빠지기 때문이다.
+                      // 미국에는 KRX 확정 종가 같은 것이 없다. 대신 몇 개가 주가를
+                      // 가졌는지 밝힌다 — 없는 줄은 PER·시총이 비어 조건에서 저절로 빠진다.
                       <>
-                        주가를 받아 온 회사{' '}
-                        <span className="tabular">{usResult?.priced}</span>개
+                        주가를 가진 회사 <span className="tabular">{usResult?.priced}</span>개
+                        {usResult?.price_as_of && (
+                          <>
+                            {' · 주가 기준 '}
+                            <span className="tabular">
+                              {formatTimestamp(usResult.price_as_of)}
+                            </span>
+                          </>
+                        )}
                       </>
                     )}
                   </span>
@@ -358,11 +366,12 @@ export function Screener({ symbol, section, onSelect, onSection }: Props) {
             </>
           ) : (
             <>
-              미국은 아는 종목이 훨씬 적습니다. 회사 하나의 재무를 받는 데 3~4MB 가 필요해서
-              거래대금 상위만 담아 두고, 거기서{' '}
-              <strong className="text-neutral-400">ETF·상품신탁과 우선주·워런트를 걷어낸</strong>{' '}
-              회사만 셉니다. 같은 회사가 티커 여러 개로 상장돼 있으면 한 줄로 묶습니다. 미국
-              시장 전체를 훑는 것이 아니므로, 조건에 맞는 회사가 이 목록 밖에 훨씬 더 있습니다.
+              지표를 아는 회사는 SEC 에 보고된{' '}
+              <strong className="text-neutral-400">매출 상위 300개</strong> 를 목표로 채웁니다.
+              거기서 ETF·상품신탁을 빼고, 같은 회사가 우선주·워런트 등 티커 여러 개로 상장돼
+              있으면 한 줄로 묶습니다. 회사 하나의 재무를 받는 데 3~4MB 가 필요해 밤마다 조금씩
+              채우므로 아직 다 차지 않았을 수 있습니다. 미국 시장 전체를 훑는 것이 아니므로,
+              조건에 맞는 회사가 이 목록 밖에 더 있습니다.
             </>
           )}
           <br />

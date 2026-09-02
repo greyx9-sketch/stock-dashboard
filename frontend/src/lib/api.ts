@@ -843,8 +843,10 @@ export type UsScreenRow = {
 export type UsScreenResult = {
   universe: number
   matched: number
-  /** 주가까지 받아 온 회사 수. 이보다 적으면 일부 줄의 PER·시총이 비어 있다. */
+  /** 주가를 가진 회사 수. 이보다 적으면 일부 줄의 PER·시총이 비어 있다. */
   priced: number
+  /** 주가를 받아 둔 시각(ISO). 국내의 '확정 종가 기준일'에 해당한다. */
+  price_as_of: string | null
   rows: UsScreenRow[]
 }
 

@@ -11,6 +11,7 @@ SEC 는 티커가 아니라 CIK(제출자 고유번호)로 조회한다. 그 매
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from decimal import Decimal
 
 from sqlalchemy import BigInteger, DateTime, Index, Integer, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column
@@ -40,6 +41,28 @@ class SecCompany(Base):
     # "Semiconductors & Related Devices" 라고 그대로 적을 수 있다.
     sic: Mapped[str | None] = mapped_column(String(6), nullable=True)
     sic_description: Mapped[str | None] = mapped_column(String(200), nullable=True)
+
+    # 마지막으로 받아 둔 주가와 그 시각.
+    #
+    # **국내의 KRX 확정 종가에 해당하는 자리다.** 스크리너는 후보 전부의 시가총액을
+    # 알아야 PER 을 낼 수 있는데, 그때마다 실시간 폴러에 유니버스를 통째로 등록하면
+    # 웹소켓 구독 한도(100종목)를 스크리너가 먹어 치워 사용자가 보던 종목이 실시간에서
+    # 밀려난다. 그래서 값을 미리 받아 여기 두고, 스크리너는 DB 만 읽는다.
+    #
+    # 시각을 함께 담는 이유 — 미국은 확정 종가라는 개념이 없어 "언제 값인지"를
+    # 화면이 밝혀야 한다. 장중에 받은 값과 마감 뒤에 받은 값이 다른 뜻이기 때문이다.
+    last_close: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), nullable=True)
+
+    # 이 **티커 하나**의 상장주식수(토스 기준). 위 `shares_outstanding` 은 SEC 가
+    # 회사(CIK) 단위로 보고한 수라 둘은 다른 것을 센다.
+    #
+    # 왜 두는가 — 한 회사가 티커 여러 개로 상장돼 있을 때 어느 것이 보통주인지
+    # 가리는 데 쓴다. 티커 글자만으로는 알 수 없다(`us_universe.screen_universe`).
+    # 컴캐스트는 우선주 CCZ 가 258만주, 본주 CMCSA 가 35억주다.
+    listed_shares: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    last_close_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     fetched_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)

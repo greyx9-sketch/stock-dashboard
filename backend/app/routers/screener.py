@@ -14,7 +14,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from decimal import Decimal
 
 from fastapi import APIRouter, HTTPException, Path, Query
@@ -23,7 +22,6 @@ from pydantic import BaseModel, Field
 from app.services import universe as universe_service
 from app.services import us_universe
 from app.services import valuation as valuation_service
-from app.services.price_poller import poller
 
 router = APIRouter(prefix="/api/screener", tags=["기업 분석"])
 
@@ -145,10 +143,6 @@ def screen(
 # 시장 구분이 없고, 주가와 시가총액이 달러이며(국내는 원화 정수), KRX 확정 종가에
 # 해당하는 기준일이 없다. 국내 모델에 억지로 끼우면 두 화면 모두 읽기 나빠진다.
 
-# 폴러가 주가를 받아 올 때까지 기다리는 횟수와 간격. `routers/us_stocks.py` 와 같은 값이다.
-US_WAIT_TRIES = 6
-US_WAIT_SEC = 0.5
-
 US_SORTABLE = ("market_cap", "per", "pbr", "roe", "dividend_yield", "revenue_growth")
 
 
@@ -169,13 +163,17 @@ class UsScreenOut(BaseModel):
     universe: int = Field(description="지표를 알고 있는 회사 수. 미국 시장 전체가 아니다")
     matched: int = Field(description="조건에 맞은 회사 수")
     priced: int = Field(
-        description="그중 주가까지 받아 온 회사 수. 주가가 없으면 PER·PBR·시총이 빈다"
+        description="그중 주가를 가진 회사 수. 주가가 없으면 PER·PBR·시총이 빈다"
+    )
+    price_as_of: str | None = Field(
+        default=None,
+        description="주가를 받아 둔 시각(ISO). 국내의 '확정 종가 기준일'에 해당한다",
     )
     rows: list[UsScreenRowOut]
 
 
 @router.get("/us", summary="조건으로 미국 종목 고르기")
-async def screen_us(
+def screen_us(
     per_max: float | None = Query(None, gt=0, description="PER 이 이 값 이하"),
     pbr_max: float | None = Query(None, gt=0, description="PBR 이 이 값 이하"),
     roe_min: float | None = Query(None, description="ROE 가 이 값 이상 (%)"),
@@ -192,9 +190,15 @@ async def screen_us(
     응답이 필요해 거래대금 상위만 담아 둔다. 거기서 ETF 와 우선주·워런트를 걷어내면
     회사 단위로 몇십 개다(`services/us_universe.screen_universe`). 화면이 그 수를 밝힌다.
 
-    **주가는 폴러가 들고 있는 것을 쓴다.** 유니버스를 등록하고 잠깐 기다렸다 답한다.
-    끝내 못 받은 종목은 지표를 비운 채 이름만 나온다 — 목록에서 빼면 "조건에 맞는
-    회사가 그것뿐"으로 잘못 읽힌다. 대신 몇 개가 주가까지 받아졌는지를 함께 알린다.
+    **주가는 미리 받아 둔 것을 쓴다.** 예전에는 조회할 때마다 유니버스를 실시간
+    폴러에 등록하고 값이 오기를 기다렸는데, 그러면 웹소켓 구독 한도(100종목)를
+    스크리너가 먹어 치워 **사용자가 보고 있던 종목이 실시간에서 소리 없이 밀려났다.**
+    유니버스가 수십 개일 때는 드러나지 않던 문제다. 지금은 야간에 받아 둔 값을 읽고
+    (`us_universe.refresh_closes`), 폴러가 마침 들고 있는 값이 있으면 그쪽이 우선이다.
+    국내가 KRX 확정 종가를 저장해 두고 읽는 것과 같은 구조다.
+
+    주가가 없는 종목은 지표를 비운 채 이름만 나온다 — 목록에서 빼면 "조건에 맞는
+    회사가 그것뿐"으로 잘못 읽힌다. 대신 몇 개가 주가를 가졌는지를 함께 알린다.
     """
     if sort not in US_SORTABLE:
         raise HTTPException(
@@ -205,13 +209,9 @@ async def screen_us(
     if not tickers:
         return UsScreenOut(universe=0, matched=0, priced=0, rows=[])
 
-    poller.register(tickers)
-    rows = valuation_service.us_screen_rows(tickers)
-    for _ in range(US_WAIT_TRIES):
-        if all(r.price is not None for r in rows):
-            break
-        await asyncio.sleep(US_WAIT_SEC)
-        rows = valuation_service.us_screen_rows(tickers)
+    # 줄마다 기준 시점이 다르면 PER 을 나란히 비교할 수 없다. 실시간 값을 섞지 않고
+    # 받아 둔 종가로 통일한다(`us_screen_rows` 의 prefer_live 주석 참고).
+    rows = valuation_service.us_screen_rows(tickers, prefer_live=False)
 
     def passes(row: valuation_service.UsScreenRow) -> bool:
         # 국내와 같은 규칙 — 조건을 건 항목의 값이 없으면 뺀다. 주가를 못 받아
@@ -240,6 +240,7 @@ async def screen_us(
         universe=len(rows),
         matched=len(matched),
         priced=sum(1 for r in rows if r.price is not None),
+        price_as_of=us_universe.closes_as_of(),
         rows=[UsScreenRowOut(**vars(r)) for r in ordered[:limit]],
     )
 

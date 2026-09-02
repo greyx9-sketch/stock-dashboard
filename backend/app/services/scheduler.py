@@ -43,6 +43,11 @@ UNIVERSE_JOB_ID = "screener-universe"
 UNIVERSE_HOUR = 14
 UNIVERSE_MINUTE = 0
 
+# 하룻밤에 새로 받을 미국 회사 수의 상한. 회사당 3~4MB 라 이 정도가 한 번에
+# 내려받아도 부담이 없는 양이다. 이미 받아 둔 회사는 세지 않으므로, 목표
+# (`us_universe.SCREEN_TARGET`)에 닿으면 이 일은 저절로 값이 싸진다.
+US_LOAD_PER_RUN = 80
+
 # 새 연차보고서 자동 분석 시각(KST). **돈이 나가는 유일한 예약 작업이다.**
 #
 # 이른 아침에 둔다 — 사용자가 낮에 직접 분석을 누를 때 하루 상한이 이미 차 있으면
@@ -74,6 +79,15 @@ STARTUP_DELAY_SEC = 20
 
 # 오래 꺼져 있었을 수 있으므로 기동 시에는 더 넓게 훑는다.
 STARTUP_SCAN_DAYS = 30
+
+
+def _last_full_year() -> str:
+    """SEC 횡단면에 물어볼 구간. 지난 회계연도를 쓴다.
+
+    올해 것은 아직 다 제출되지 않아 회사가 몇 안 된다. 한 해 뒤로 물러서면
+    대부분의 10-K 가 들어와 있다.
+    """
+    return f"CY{datetime.now(KST).year - 1}"
 
 
 @dataclass
@@ -221,17 +235,58 @@ class KrxScheduler:
             logger.exception("미국 유니버스 적재 실패 — 다음 주기에 다시 시도한다")
 
     async def _load_us_universe(self) -> None:
-        """미국 동종업계 비교가 볼 종목들.
+        """미국 동종업계 비교와 스크리너가 볼 종목들.
 
-        **거래대금 상위에서 고른다.** 국내처럼 시가총액을 다 알지 못해서인데, 사용자가
-        실제로 화면에서 보는 종목이라 실용적으로는 같은 자리를 덮는다.
+        후보를 두 곳에서 모은다.
+
+        **거래대금 상위**(토스) — 사용자가 실제로 화면에서 보는 종목이다. 다만 이
+        랭킹은 상위 100종목까지만 덮는다. 유니버스가 오래 작았던 원인이 여기였다.
+
+        **매출 상위**(SEC 횡단면) — 그 벽이 없다. 한 번의 호출로 수천 회사의 매출이
+        오므로 거기서 매출 큰 순으로 자른다(`us_universe.candidates`).
+
+        거래대금 쪽을 앞에 둔다. 둘 다 못 받을 때 먼저 채워야 하는 것은 사용자가
+        지금 보고 있는 종목이기 때문이다.
+
+        **한 번에 다 받지 않는다.** 회사 하나의 재무가 3~4MB 라 300개를 한꺼번에
+        받으면 1GB 에 가깝다. 이미 받아 둔 회사는 `load` 가 건너뛰므로, 밤마다
+        조금씩 받아 며칠에 걸쳐 채운다.
         """
         from app.routers.us_stocks import top_us_symbols
         from app.services import us_universe
 
-        tickers = await top_us_symbols(us_universe.DEFAULT_SIZE)
-        if tickers:
-            await us_universe.load(tickers)
+        wanted: list[str] = []
+        try:
+            wanted.extend(await top_us_symbols(us_universe.DEFAULT_SIZE))
+        except Exception:
+            logger.warning("거래대금 상위를 받지 못했다", exc_info=True)
+
+        try:
+            wanted.extend(await us_universe.candidates(_last_full_year()))
+        except Exception:
+            logger.warning("매출 횡단면을 받지 못했다", exc_info=True)
+
+        # 두 출처가 겹친다. 앞선 것을 남기고 순서를 지킨다.
+        seen: set[str] = set()
+        tickers = [t for t in wanted if not (t in seen or seen.add(t))]
+        if not tickers:
+            return
+
+        # **아직 안 받은 것 중에서** 자른다. 후보 앞에서 그냥 자르면 앞쪽이 다 찬
+        # 뒤로는 매번 같은 것을 다시 훑고 뒤쪽은 차례가 오지 않는다.
+        todo = us_universe.not_loaded(tickers)[:US_LOAD_PER_RUN]
+        if todo:
+            await us_universe.load(todo)
+
+        # 시세는 값이 싸다(200종목 한 묶음). 재무를 받아 둔 종목 전부를 매번 갱신한다 —
+        # 스크리너가 이 값으로 시가총액을 내므로 하루만 묵어도 PER 이 어제 것이 된다.
+        # 대표만이 아니라 형제 티커까지 받는다 — "주가를 매길 수 있는가"가 대표를
+        # 고르는 기준이라, 형제 값이 없으면 그 판단을 못 한다.
+        pricing = us_universe.pricing_tickers()
+        await us_universe.refresh_closes(pricing)
+        # 티커별 상장주식수. 대표 티커를 가리는 데 쓴다 — 자주 바뀌지 않지만
+        # 새로 담긴 회사의 형제 티커는 값이 없으므로 같이 돌린다.
+        await us_universe.refresh_listed_shares(pricing)
 
     def shutdown(self) -> None:
         if self._scheduler.running:

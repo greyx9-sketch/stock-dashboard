@@ -235,3 +235,23 @@ class SecClient:
     async def get_company_facts(self, cik: str) -> dict[str, Any]:
         """회사의 XBRL 사실 전체. 3~4MB 지만 전 연도·전 계정이 한 번에 들어 있다."""
         return await self._get_json(f"{DATA_BASE}/api/xbrl/companyfacts/CIK{pad_cik(cik)}.json")
+
+    async def get_frame(
+        self, concept: str, *, unit: str = "USD", period: str, taxonomy: str = "us-gaap"
+    ) -> list[dict[str, Any]]:
+        """한 계정의 **횡단면**. 한 번에 수천 개 회사의 같은 항목을 받는다.
+
+        `companyfacts` 가 "회사 하나의 전 계정"이라면 이쪽은 "계정 하나의 전 회사"다.
+        회사별로 부르면 3~4MB × 회사 수인 일이 한 번의 호출로 끝난다.
+
+        쓰는 곳은 **유니버스를 고르는 것뿐이다.** 화면에 나가는 숫자는 지금처럼
+        회사별 `companyfacts` 에서 낸다 — 출처가 갈리면 같은 종목의 매출이 목록과
+        상세에서 다르게 보인다.
+
+        `period` 는 `CY2025` 같은 연간 구간이다. 해당 계정을 쓰지 않는 해·단위는
+        404 가 정상이므로 부르는 쪽이 여러 태그를 차례로 시도한다.
+        """
+        data = await self._get_json(
+            f"{DATA_BASE}/api/xbrl/frames/{taxonomy}/{concept}/{unit}/{period}.json"
+        )
+        return data.get("data", []) if isinstance(data, dict) else []
