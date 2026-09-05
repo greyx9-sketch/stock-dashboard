@@ -48,8 +48,12 @@ type Props = {
   mdnaPoints: string[]
   moat: string | null
   openQuestions: string[]
-  /** 위험 항목에 붙는 꼬리표. 미국은 "실질", 국내는 출처 이름이 온다. */
-  riskTag?: (risk: DecoderRisk, index: number) => string | null
+  /** 위험 제목 옆의 짧은 강조 칩. 미국의 "실질"처럼 **뜻이 있는 표시**에만 쓴다.
+   *  호박색은 이 화면에서 주의를 뜻하므로 단순 분류에 쓰면 안 된다. */
+  riskBadge?: (risk: DecoderRisk, index: number) => string | null
+  /** 이 위험이 보고서 어디서 나왔는지. 각주로 아래에 조용히 붙는다.
+   *  국내 사업보고서는 위험요인 장이 따로 없고 여러 장에 흩어져 있어서 출처가 중요하다. */
+  riskSource?: (risk: DecoderRisk, index: number) => string | null
   /** 카드 맨 아래 각주(회계연도·제출일·원문 링크). */
   footer: ReactNode
   /** 이 분석이 무엇이고 무엇이 아닌지. 맨 위 안내. */
@@ -69,7 +73,8 @@ export function DecoderCard({
   mdnaPoints,
   moat,
   openQuestions,
-  riskTag,
+  riskBadge,
+  riskSource,
   footer,
   scopeNote,
 }: Props) {
@@ -126,15 +131,20 @@ export function DecoderCard({
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
                     <span className="font-medium text-neutral-200">{risk.title}</span>
-                    {riskTag?.(risk, i) && (
+                    {riskBadge?.(risk, i) && (
                       <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-400/90">
-                        {riskTag(risk, i)}
+                        {riskBadge(risk, i)}
                       </span>
                     )}
                   </div>
                   <p className="mt-1 text-xs leading-relaxed text-neutral-400">
                     {risk.why_it_matters}
                   </p>
+                  {riskSource?.(risk, i) && (
+                    <p className="mt-1 text-[11px] text-neutral-600">
+                      출처: {riskSource(risk, i)}
+                    </p>
+                  )}
                 </div>
               </li>
             ))}

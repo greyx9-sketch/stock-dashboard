@@ -175,9 +175,11 @@ function AnalysisBody({ analysis }: { analysis: KrAnalysis }) {
       mdnaPoints={analysis.mdna_points}
       moat={analysis.moat_and_competition}
       openQuestions={analysis.open_questions}
-      /* 국내는 "어느 장에서 나온 위험인가"가 꼬리표다. 사업보고서는 위험요인 장이 따로
-         없고 여러 장에 흩어져 있어서, 출처를 밝혀야 원문과 대조할 수 있다. */
-      riskTag={(_, i) => analysis.key_risks[i]?.source || null}
+      /* 국내는 "어느 장에서 나온 위험인가"를 밝혀야 원문과 대조할 수 있다. 사업보고서는
+         위험요인 장이 따로 없고 여러 장에 흩어져 있기 때문이다. 다만 이건 **출처지 경고가
+         아니므로** 제목 옆 호박색 칩이 아니라 아래 각주로 붙인다 — 이 화면에서 호박색은
+         주의를 뜻하고, 게다가 출처 이름이 길어서 위험 제목과 자리를 다툰다. */
+      riskSource={(_, i) => analysis.key_risks[i]?.source || null}
       scopeNote={
         <p className="rounded border border-neutral-800 bg-neutral-950/50 px-2.5 py-2 text-[11px] leading-relaxed text-neutral-500">
           AI 가 사업보고서 원문을 읽고 정리한{' '}

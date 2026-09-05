@@ -184,7 +184,7 @@ function AnalysisBody({ analysis }: { analysis: UsAnalysis }) {
       mdnaPoints={analysis.mdna_points}
       moat={analysis.moat_and_competition}
       openQuestions={analysis.open_questions}
-      riskTag={() => '실질'}
+      riskBadge={() => '실질'}
       scopeNote={
         /* 이 블록이 무엇이고 무엇이 아닌지를 맨 위에 못 박는다. 수치는 재무표가 담당한다. */
         <p className="rounded border border-neutral-800 bg-neutral-950/50 px-2.5 py-2 text-[11px] leading-relaxed text-neutral-500">
