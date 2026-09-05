@@ -38,7 +38,7 @@ export function Card({
   const hasHeader = title !== undefined || actions !== undefined || meta !== undefined
 
   return (
-    <div className={`rounded-lg border border-neutral-800 bg-neutral-900/40 ${className}`}>
+    <div className={`rounded-lg bg-neutral-900/40 shadow-edge ${className}`}>
       {hasHeader && (
         <div className="flex flex-wrap items-center gap-1 border-b border-neutral-800 px-3 py-2">
           {title !== undefined && (
