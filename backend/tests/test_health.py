@@ -10,7 +10,14 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from app.services import health
-from app.services.health import Check, _check_errors, _check_poller, _worst, record_error
+from app.services.health import (
+    Check,
+    _check_collection,
+    _check_errors,
+    _check_poller,
+    _worst,
+    record_error,
+)
 
 
 def setup_function() -> None:
@@ -153,3 +160,74 @@ def test_error_is_reported_even_when_quiet(monkeypatch):
     check = _check_poller(datetime.now(timezone.utc))
     assert check.status == "degraded"
     assert "403" in check.detail
+
+
+# ---------------------------------------------------------------- 확정 종가 수집
+#
+# 수집은 **평일 13:20 한 번**만 돈다. 그래서 "얼마나 지났나"로 재면 주말마다 반드시
+# 운다. 아래 테스트들이 그 함정을 못 박는다 (회귀 2026-09-06).
+
+
+class _FakeRun:
+    def __init__(self, started_at: datetime, error: str | None = None) -> None:
+        self.started_at = started_at
+        self.error = error
+
+    @property
+    def ok(self) -> bool:
+        return self.error is None
+
+
+def _fake_last_run(monkeypatch, run) -> None:
+    monkeypatch.setattr(type(health.scheduler), "last_run", property(lambda self: run))
+
+
+def _kst(y: int, m: int, d: int, hh: int, mm: int = 0) -> datetime:
+    return datetime(y, m, d, hh, mm, tzinfo=health.KST)
+
+
+def test_weekend_after_friday_run_is_not_an_alarm(monkeypatch):
+    """**회귀(2026-09-06).** 금요일에 성공했으면 주말 내내 정상이다.
+
+    예전 기준은 "36시간 지나면 degraded" 였다. 수집이 금요일 13:20 에 돌고 나면
+    **토요일 새벽 1시 20분부터 월요일 낮까지 매주 빨간불**이 켜졌다 — 고장이 하나도
+    없는데. 배포 서버에서 실제로 그 상태를 보고 잡았다.
+    """
+    _fake_last_run(monkeypatch, _FakeRun(_kst(2026, 9, 4, 13, 20)))  # 금 13:20
+    for now in (_kst(2026, 9, 5, 3), _kst(2026, 9, 6, 1, 41), _kst(2026, 9, 7, 12)):
+        assert _check_collection(now).status == "ok", now
+
+
+def test_missed_weekday_run_is_degraded(monkeypatch):
+    """반대쪽 — 평일 예정분을 정말 빠뜨리면 여전히 잡는다.
+
+    금요일에 성공한 뒤 월요일 예정분(13:20)이 유예까지 지나도록 안 돌았다.
+    """
+    _fake_last_run(monkeypatch, _FakeRun(_kst(2026, 9, 4, 13, 20)))
+    check = _check_collection(_kst(2026, 9, 7, 17))  # 월 17:00 — 유예 3시간을 넘겼다
+    assert check.status == "degraded"
+    assert "09-07 13:20" in check.detail
+
+
+def test_today_run_is_not_blamed_before_grace_ends(monkeypatch):
+    """오늘 예정분은 유예 안에서는 책임을 묻지 않는다.
+
+    수집 자체가 몇 분 걸리고 서버가 마침 재시작 중일 수도 있다. 13:25 에 우는 경보를
+    만들면 그것대로 무시하게 된다.
+    """
+    _fake_last_run(monkeypatch, _FakeRun(_kst(2026, 9, 4, 13, 20)))  # 금요일 것뿐
+    assert _check_collection(_kst(2026, 9, 7, 13, 25)).status == "ok"
+
+
+def test_failed_run_is_degraded_regardless_of_schedule(monkeypatch):
+    """방금 돌았어도 **실패했으면** 그건 일정과 무관하게 고장이다."""
+    _fake_last_run(monkeypatch, _FakeRun(_kst(2026, 9, 4, 13, 20), error="인증키가 틀렸습니다"))
+    check = _check_collection(_kst(2026, 9, 4, 13, 30))
+    assert check.status == "degraded"
+    assert "인증키" in check.detail
+
+
+def test_never_run_is_not_an_alarm(monkeypatch):
+    """기동 직후에는 기록이 없다. 이걸로 울리면 재시작마다 운다."""
+    _fake_last_run(monkeypatch, None)
+    assert _check_collection(datetime.now(timezone.utc)).status == "ok"

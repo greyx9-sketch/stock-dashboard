@@ -24,13 +24,13 @@ from __future__ import annotations
 import time
 from collections import deque
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import text
 
 from app.models.base import get_session
 from app.services.price_poller import LIVE_PHASES, poller
-from app.services.scheduler import scheduler
+from app.services.scheduler import KST, RUN_HOUR, RUN_MINUTE, scheduler
 
 # 최근 오류를 몇 건까지 들고 있을지. 화면에 보여줄 만큼만 남긴다.
 ERROR_BUFFER = 50
@@ -46,9 +46,17 @@ ERROR_THRESHOLD = 3
 # 정규장 폴링 간격이 5초, 연속 실패 시 최대 백오프가 120초라 그보다 넉넉히 잡는다.
 POLLER_STALL_SEC = 600
 
-# 확정 종가 수집은 하루 한 번이라 한 번 실패했다고 바로 울리지 않는다.
-# 이만큼 지나도록 성공이 없으면 알린다(초).
-COLLECTION_STALL_SEC = 36 * 3600
+# 확정 종가 수집을 "빠뜨렸다"고 판정하기까지의 유예(초).
+#
+# **경과 시간으로 재면 안 된다.** 수집은 평일 13:20 에만 돌므로, 금요일에 성공하고
+# 주말을 나면 아무 이상이 없어도 40시간이 넘게 지난다. 실제로 예전 기준(36시간)은
+# **토요일 새벽마다 반드시 빨간불이 켜졌다** — 이 파일 맨 위에 적어 둔 "멀쩡한데
+# 우는 경보를 만들지 않는다"를 스스로 어기고 있었다.
+#
+# 그래서 시계가 아니라 **일정**과 견준다. 마지막으로 돌았어야 할 예정 시각을 찾아,
+# 그보다 뒤에 성공 기록이 있으면 정상이다. 유예는 그 예정 시각을 얼마나 봐주느냐다 —
+# 수집 자체가 몇 분 걸리고, 서버가 마침 재시작 중일 수도 있다.
+COLLECTION_GRACE_SEC = 3 * 3600
 
 
 @dataclass
@@ -175,6 +183,23 @@ def _check_poller(now: datetime) -> Check:
     return Check("현재가", "ok", f"{int(age)}초 전 갱신 · {poller.realtime_detail}")
 
 
+def _last_due_collection(now: datetime) -> datetime:
+    """지금 시점에서 **이미 끝났어야 하는** 가장 최근 예정 수집 시각(KST).
+
+    수집 일정은 평일 13:20 하나뿐이다(`scheduler.py`). 주말에는 예정 자체가 없으므로
+    금요일 것이 계속 마지막으로 남고, 그래서 토·일에는 40시간이 지나도 정상이다.
+
+    유예를 먼저 빼고 되짚는다 — 오늘 13:20 예정분은 유예가 끝나기 전까지 책임을 묻지 않는다.
+    """
+    deadline = now.astimezone(KST) - timedelta(seconds=COLLECTION_GRACE_SEC)
+    due = deadline.replace(hour=RUN_HOUR, minute=RUN_MINUTE, second=0, microsecond=0)
+    if due > deadline:
+        due -= timedelta(days=1)
+    while due.weekday() >= 5:  # 토(5)·일(6) 에는 예정이 없다
+        due -= timedelta(days=1)
+    return due
+
+
 def _check_collection(now: datetime) -> Check:
     """KRX 확정 종가 자동 수집.
 
@@ -187,9 +212,14 @@ def _check_collection(now: datetime) -> Check:
     if not last.ok:
         return Check("종가 수집", "degraded", f"마지막 수집 실패 — {last.error}"[:200])
 
-    age = (now - last.started_at).total_seconds()
-    if age > COLLECTION_STALL_SEC:
-        return Check("종가 수집", "degraded", f"{int(age // 3600)}시간째 수집 기록이 없습니다.")
+    due = _last_due_collection(now)
+    if last.started_at < due:
+        hours = int((now - last.started_at).total_seconds() // 3600)
+        return Check(
+            "종가 수집",
+            "degraded",
+            f"{hours}시간째 수집 기록이 없습니다 — {due:%m-%d %H:%M} 예정분을 빠뜨렸습니다.",
+        )
     return Check("종가 수집", "ok", "정상")
 
 
