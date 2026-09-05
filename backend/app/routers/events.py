@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 from app.models.event import KINDS
 from app.services import events as events_service
+from app.clock import today_kst
 
 router = APIRouter(prefix="/api/events", tags=["일정"])
 
@@ -79,8 +80,13 @@ def get_upcoming(
     `days_away` 를 함께 준다. 화면이 "D-2" 를 만들 때 날짜 계산을 다시 하지 않도록,
     그리고 서버와 브라우저의 오늘이 어긋나지 않도록 여기서 낸다 — 시간대가 다르면
     하루 어긋난다.
+
+    **그 어긋남이 실제로 나 있었다**(2026-09-06 확인). 여기서 쓰던 `date.today()` 는
+    기계의 시간대를 따르는데 배포 서버가 UTC 라, 한국시간 자정~아침 9시 사이에는
+    서버의 "오늘"이 사용자의 어제였다. 어제 일정이 D-0 으로 남고 모든 D-n 이 하루씩
+    밀린다. 이제 `app.clock.today_kst()` 로 한국 달력을 못 박아 쓴다.
     """
-    today = date.today()
+    today = today_kst()
     end = date.fromordinal(today.toordinal() + days)
     found = events_service.load(today, end)[:limit]
     return [

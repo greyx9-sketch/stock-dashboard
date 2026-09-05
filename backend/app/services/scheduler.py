@@ -30,10 +30,12 @@ from app.clients.dart import DartError
 from app.clients.krx import KrxError
 from app.clients.sec import SecError
 from app.services import dart_corps, krx_ingest, sec_companies
+from app.clock import KST
 
 logger = logging.getLogger(__name__)
 
-KST = timezone(timedelta(hours=9))
+# 한국 표준시는 `app.clock` 한 곳에서만 정의한다. 여기서 다시 만들면
+# 나중에 한쪽만 고쳐지는 종류의 버그가 생긴다.
 
 JOB_ID = "krx-daily-close"
 

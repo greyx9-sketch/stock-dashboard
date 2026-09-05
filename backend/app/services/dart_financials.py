@@ -32,6 +32,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from app.clients.dart import ANNUAL_REPORT, DartClient
 from app.models.base import get_session
 from app.models.financial import DartFinancial
+from app.clock import today_kst
 
 logger = logging.getLogger(__name__)
 
@@ -268,7 +269,7 @@ def latest_annual_year(today: date | None = None) -> int:
     사업보고서는 결산 후 90일 이내(대개 3월)에 나온다. 그래서 4월 전에는 재작년이,
     그 뒤로는 작년이 최신이다. 실제로 없으면 호출 쪽에서 한 해 더 거슬러 올라간다.
     """
-    today = today or date.today()
+    today = today or today_kst()
     return today.year - 1 if today.month >= 4 else today.year - 2
 
 

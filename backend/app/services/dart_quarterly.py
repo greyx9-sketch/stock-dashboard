@@ -49,6 +49,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from app.clients.dart import HALF_REPORT, Q1_REPORT, Q3_REPORT, DartClient
+from app.clock import today_kst
 from app.models.base import get_session
 from app.models.quarterly import DartQuarterly
 from app.services.dart_financials import _find_row, _to_int
@@ -86,7 +87,7 @@ def due_quarters(today: date | None = None, *, years: int = 3) -> list[tuple[int
     아직 제출 기한이 지나지 않은 분기는 넣지 않는다 — 부르면 빈 응답이 오므로 호출만
     버린다. 기한이 지났는데 아직 안 낸 회사는 빈 응답이 오고, 다음에 다시 부르면 들어온다.
     """
-    today = today or date.today()
+    today = today or today_kst()
     out: list[tuple[int, int]] = []
     for year in range(today.year, today.year - years, -1):
         for quarter in (3, 2, 1):

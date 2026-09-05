@@ -37,10 +37,12 @@ from typing import Any, Literal
 
 from app.clients.toss import TossClient, TossError
 from app.clients.toss_ws import TossTradeFeed
+from app.clock import KST
 
 logger = logging.getLogger(__name__)
 
-KST = timezone(timedelta(hours=9))
+# 한국 표준시는 `app.clock` 한 곳에서만 정의한다. 여기서 다시 만들면
+# 나중에 한쪽만 고쳐지는 종류의 버그가 생긴다.
 
 # 한 번에 조회할 수 있는 종목 수. 토스 문서에 명시된 상한이다.
 MAX_SYMBOLS_PER_CALL = 200

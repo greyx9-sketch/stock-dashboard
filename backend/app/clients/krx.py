@@ -33,6 +33,7 @@ import httpx
 
 from app.clients.ratelimit import TokenBucket
 from app.config import get_settings
+from app.clock import today_kst
 
 logger = logging.getLogger(__name__)
 
@@ -220,7 +221,7 @@ class KrxClient:
         }
         if begin is None and end is None:
             # 영업일 기준 limit 일을 확보하려면 주말·공휴일을 감안해 대략 1.6배가 필요하다.
-            begin = date.today() - timedelta(days=int(limit * 1.6) + 10)
+            begin = today_kst() - timedelta(days=int(limit * 1.6) + 10)
         if begin is not None:
             params["beginBasDt"] = begin.strftime("%Y%m%d")
         if end is not None:

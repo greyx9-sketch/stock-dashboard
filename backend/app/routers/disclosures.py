@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 
 from app.clients.dart import REPORT_TYPES, DartClient, DartError, Disclosure
 from app.services import dart_corps
+from app.clock import today_kst
 
 router = APIRouter(prefix="/api/stocks", tags=["공시"])
 
@@ -91,7 +92,7 @@ async def get_disclosures(
     if cached and now - cached[0] < CACHE_TTL_SEC:
         rows = cached[1]
     else:
-        end = date.today()
+        end = today_kst()
         begin = end - timedelta(days=days)
         try:
             async with DartClient() as dart:

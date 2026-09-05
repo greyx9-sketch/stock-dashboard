@@ -39,6 +39,7 @@ from app.models.dart_analysis import (
     STATUS_PENDING,
     DartAnalysis,
 )
+from app.clock import today_kst
 from app.services import analysis_batch, llm_budget
 from app.services.dart_extract import (
     DartExtractError,
@@ -170,8 +171,8 @@ async def _annual_candidates(corp: DartCorp) -> list[Disclosure]:
     async with DartClient() as dart:
         items = await dart.get_disclosures(
             corp.corp_code,
-            begin=date(date.today().year - LOOKBACK_YEARS, 1, 1),
-            end=date.today(),
+            begin=date(today_kst().year - LOOKBACK_YEARS, 1, 1),
+            end=today_kst(),
             count=100,
             report_type="A",  # 정기공시
             final_only=False,

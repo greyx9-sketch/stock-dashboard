@@ -17,6 +17,7 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from app.clients.krx import DailyQuote, KrxClient
+from app.clock import KST
 from app.models.base import get_session, init_db
 from app.models.quote import KrxDailyQuote
 
@@ -25,7 +26,8 @@ UPSERT_CHUNK = 500
 
 # 확정 종가가 공개되는 시각(한국시간 오후 1시). 이 전에는 어제 데이터를 조회해도 비어 있다.
 PUBLISH_HOUR_KST = 13
-KST = timezone(timedelta(hours=9))
+# 한국 표준시는 `app.clock` 한 곳에서만 정의한다. 여기서 다시 만들면
+# 나중에 한쪽만 고쳐지는 종류의 버그가 생긴다.
 
 
 @dataclass(frozen=True)
