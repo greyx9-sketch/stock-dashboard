@@ -201,8 +201,12 @@ def test_pending_batch_ids_are_listed(_pending_row):
 
 def test_applying_a_good_result_fills_the_row(_pending_row):
     content = tenk_analysis.TenKAnalysisContent(
+        one_liner="전화기를 팔고, 그 전화기 안에서 앱·구독으로 계속 받는 회사입니다.",
         business_summary="아이폰을 판다.",
-        segments=["기기", "서비스"],
+        segments=[
+            tenk_analysis.SegmentItem(name="기기", what="아이폰·맥·워치"),
+            tenk_analysis.SegmentItem(name="서비스", what="앱스토어·구독"),
+        ],
         key_risks=[
             tenk_analysis.RiskItem(
                 title="공급망 집중",
@@ -212,6 +216,7 @@ def test_applying_a_good_result_fills_the_row(_pending_row):
         ],
         mdna_points=["서비스 매출이 늘었다고 설명"],
         moat_and_competition="생태계를 우위로 든다.",
+        open_questions=["서비스 매출의 성장이 언제까지 이어질까?"],
     )
     outcome = analysis_batch.Outcome(
         custom_id=tenk_analysis.custom_id_for(_pending_row),
@@ -234,11 +239,13 @@ def test_applying_a_good_result_fills_the_row(_pending_row):
 def test_applying_an_empty_result_marks_it_failed(_pending_row):
     """형식은 맞는데 알맹이가 빈 응답을 저장하면 캐시가 독이 된다."""
     empty = tenk_analysis.TenKAnalysisContent(
+        one_liner="",
         business_summary="",
         segments=[],
         key_risks=[],
         mdna_points=[],
         moat_and_competition="",
+        open_questions=[],
     )
     outcome = analysis_batch.Outcome(
         custom_id=tenk_analysis.custom_id_for(_pending_row),

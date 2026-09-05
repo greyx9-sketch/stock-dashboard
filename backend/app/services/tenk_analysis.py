@@ -54,7 +54,14 @@ MODEL = "claude-sonnet-5"
 #     나머지 네 필드를 빈 채로 돌려줬다(출력 430토큰, 정상은 2,600). 입력은 멀쩡했다 —
 #     Item 1A 가 "ITEM 1A. RISK FACTORS" 에서 정확히 시작한 것을 추출기로 확인했다.
 #     Sonnet 5 는 낮은 effort 에서 시킨 만큼만 하고 더 파고들지 않는 성향이 있다.
-PROMPT_VERSION = 2
+#
+# v3: 결과를 **읽히는 카드**로 만들기 위해 세 가지를 바꿨다(2026-09-06).
+#     · `one_liner` 추가 — 업계 용어를 금지한 한 문장. 카드의 심장이다.
+#     · `segments` 를 문자열에서 {name, what} 으로 — 이름과 설명이 갈려야 카드로 그린다.
+#     · `open_questions` 추가 — 이 분석으로 답이 안 나온 것. 빈칸을 밝히는 쪽이 정직하다.
+#     스키마가 바뀌었으므로 버전을 올린다. 옛 결과(v2 5건)는 지워지지 않고 남지만
+#     화면에는 안 나온다. 다시 분석하면 새 카드로 채워진다.
+PROMPT_VERSION = 3
 
 MAX_OUTPUT_TOKENS = 16_000
 # 섹션 글자 상한(18만 자 ≈ 4.5만 토큰) 때문에 실제로는 거의 걸리지 않는다.
@@ -90,17 +97,32 @@ class RiskItem(BaseModel):
     )
 
 
+class SegmentItem(BaseModel):
+    """사업 부문 하나. 이름과 설명을 갈라 둔다 — 카드로 그리려면 둘이 따로여야 한다."""
+
+    name: str = Field(description="부문 이름. 보고서 표기 그대로. 예: 'Experiences'")
+    what: str = Field(
+        description="이 부문이 무엇을 파는지 한 줄, 15자 안팎. 예: '파크·크루즈·굿즈'"
+    )
+
+
 class TenKAnalysisContent(BaseModel):
     """10-K 서술 분석 결과.
 
     **수치 필드가 하나도 없다.** 매출·이익·비율은 XBRL 에서 직접 계산해 따로 보여준다.
     """
 
+    one_liner: str = Field(
+        description=(
+            "이 회사가 무엇으로 돈을 버는지 **한 문장**. 카드 맨 위에 크게 놓인다. "
+            "업계 용어 없이, 돈이 어디서 어디로 흐르는지가 드러나게."
+        )
+    )
     business_summary: str = Field(
         description="이 회사가 무엇을 파는지, 돈이 어디서 나오는지 3~5문장"
     )
-    segments: list[str] = Field(
-        description="사업 부문별 한 줄 설명. 보고서에 부문 구분이 없으면 빈 목록"
+    segments: list[SegmentItem] = Field(
+        description="사업 부문. 보고서에 부문 구분이 없으면 빈 목록"
     )
     key_risks: list[RiskItem] = Field(
         description="위험요인 중 중요한 순으로 최대 6건. 형식적 문구만 있으면 그렇게 표시"
@@ -113,6 +135,12 @@ class TenKAnalysisContent(BaseModel):
     )
     moat_and_competition: str = Field(
         description="경쟁 구도와 회사가 주장하는 우위. 보고서에 근거가 없으면 그렇게 쓴다"
+    )
+    open_questions: list[str] = Field(
+        description=(
+            "이 보고서만으로는 답이 안 나온 질문 2~4개. 다음에 무엇을 더 봐야 하는지. "
+            "물음표로 끝나는 짧은 문장으로."
+        )
     )
 
 
@@ -134,6 +162,18 @@ SYSTEM_PROMPT = """\
    그것을 걸러내 주는 것이 이 분석의 핵심 가치입니다.
 5. 한국어로 쓰되 회사명·제품명·부문명 같은 고유명사는 원문 표기를 유지하십시오.
 6. 문장은 간결하게. 원문 표현을 그대로 옮기지 말고 뜻을 풀어 쓰십시오.
+7. **`one_liner` 는 이 분석의 심장입니다.** 이 회사가 무엇으로 돈을 버는지 한 문장으로
+   쓰되, 다음을 지키십시오.
+   - **업계 용어를 쓰지 마십시오** — "플랫폼", "생태계", "솔루션", "시너지", "밸류체인",
+     "종합 ○○ 기업" 같은 말이 들어가면 실패한 문장입니다. 그 말들은 아무것도 설명하지
+     않습니다. 중학생에게 말하듯 쓰십시오.
+   - **돈이 어디서 어디로 흐르는지**가 드러나야 합니다. 무엇을 만들어 누구에게 팔고,
+     그것이 어떻게 다음 매출로 이어지는지를 화살표로 잇듯 쓰십시오.
+   - 좋은 예: "사람들이 평생 좋아하는 캐릭터를 만들어서, 그 하나를 영화 → 구독료 →
+     광고 → 장난감 → 놀이공원 입장료까지 수십 년간 계속 우려먹는 회사입니다."
+   - 나쁜 예: "종합 엔터테인먼트 플랫폼 기업으로 다각화된 사업 포트폴리오를 보유합니다."
+8. `open_questions` 에는 **이 보고서만으로 답이 안 나온 것**을 적으십시오. 답을 아는
+   척하지 말고, 다음에 무엇을 더 봐야 하는지를 남기는 자리입니다. 물음표로 끝내십시오.
 """
 
 
@@ -372,10 +412,18 @@ async def _call_model(
 def _is_complete(content: TenKAnalysisContent) -> bool:
     """알맹이가 들어 있는 응답인지.
 
-    사업 요약과 위험요인 둘 다 있어야 분석이라 부를 만하다. 경영진 논의는 문서에 따라
-    참조 형식뿐일 수 있으므로 필수로 두지 않는다.
+    한 문장 요약·사업 요약·위험요인 셋이 다 있어야 분석이라 부를 만하다. 경영진 논의는
+    문서에 따라 참조 형식뿐일 수 있으므로 필수로 두지 않는다.
+
+    `one_liner` 를 여기 넣은 이유: 그것이 카드 맨 위에 크게 놓이는 심장이라, 비면 화면이
+    머리 없는 카드가 된다. v2 에서 실제로 겪은 "다섯 필드 중 하나만 채우는" 실패가
+    이 자리에서 걸려야 한다.
     """
-    return bool(content.business_summary.strip()) and bool(content.key_risks)
+    return (
+        bool(content.one_liner.strip())
+        and bool(content.business_summary.strip())
+        and bool(content.key_risks)
+    )
 
 
 async def analyze(company: SecCompany, *, force: bool = False) -> SecAnalysis:

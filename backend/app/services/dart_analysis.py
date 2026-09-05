@@ -53,7 +53,11 @@ logger = logging.getLogger(__name__)
 
 MODEL = "claude-sonnet-5"
 # 프롬프트·스키마·effort 를 고치면 올린다. 옛 결과를 지우지 않고 새로 분석된다.
-PROMPT_VERSION = 1
+#
+# v2: 미국(10-K) 쪽과 같은 이유로 카드용 필드를 넣었다(2026-09-06).
+#     `one_liner`(업계 용어 금지 한 문장) · `segments` 를 {name, what} 으로 ·
+#     `open_questions`(답이 안 나온 것). 두 시장의 카드가 같은 모양이어야 한다.
+PROMPT_VERSION = 2
 
 MAX_OUTPUT_TOKENS = 16_000
 MAX_INPUT_TOKENS = 180_000
@@ -87,14 +91,29 @@ class RiskItem(BaseModel):
     )
 
 
+class SegmentItem(BaseModel):
+    """사업 부문 하나. 이름과 설명을 갈라 둔다 — 카드로 그리려면 둘이 따로여야 한다."""
+
+    name: str = Field(description="부문 이름. 보고서 표기 그대로. 예: 'DS부문'")
+    what: str = Field(
+        description="이 부문이 무엇을 파는지 한 줄, 15자 안팎. 예: '메모리·파운드리'"
+    )
+
+
 class ReportAnalysisContent(BaseModel):
     """사업보고서 서술 분석 결과. **수치 필드가 하나도 없다.**"""
 
+    one_liner: str = Field(
+        description=(
+            "이 회사가 무엇으로 돈을 버는지 **한 문장**. 카드 맨 위에 크게 놓인다. "
+            "업계 용어 없이, 돈이 어디서 어디로 흐르는지가 드러나게."
+        )
+    )
     business_summary: str = Field(
         description="이 회사가 무엇을 팔아 돈을 버는지 3~5문장"
     )
-    segments: list[str] = Field(
-        description="사업 부문별 한 줄 설명. 부문 구분이 없으면 빈 목록"
+    segments: list[SegmentItem] = Field(
+        description="사업 부문. 부문 구분이 없으면 빈 목록"
     )
     key_risks: list[RiskItem] = Field(
         description=(
@@ -107,6 +126,12 @@ class ReportAnalysisContent(BaseModel):
     )
     moat_and_competition: str = Field(
         description="경쟁 구도와 회사가 주장하는 우위. 근거가 없으면 그렇게 쓴다"
+    )
+    open_questions: list[str] = Field(
+        description=(
+            "이 보고서만으로는 답이 안 나온 질문 2~4개. 다음에 무엇을 더 봐야 하는지. "
+            "물음표로 끝나는 짧은 문장으로."
+        )
     )
 
 
@@ -131,6 +156,18 @@ SYSTEM_PROMPT = """\
 5. 사업보고서는 홍보성 표현이 섞여 있습니다("업계 최고 수준의", "혁신적인").
    그대로 옮기지 말고 사실만 남기십시오.
 6. 문장은 간결하게. 원문을 그대로 베끼지 말고 뜻을 풀어 쓰십시오.
+7. **`one_liner` 는 이 분석의 심장입니다.** 이 회사가 무엇으로 돈을 버는지 한 문장으로
+   쓰되, 다음을 지키십시오.
+   - **업계 용어를 쓰지 마십시오** — "플랫폼", "생태계", "솔루션", "시너지", "밸류체인",
+     "종합 ○○ 기업" 같은 말이 들어가면 실패한 문장입니다. 그 말들은 아무것도 설명하지
+     않습니다. 중학생에게 말하듯 쓰십시오.
+   - **돈이 어디서 어디로 흐르는지**가 드러나야 합니다. 무엇을 만들어 누구에게 팔고,
+     그것이 어떻게 다음 매출로 이어지는지를 화살표로 잇듯 쓰십시오.
+   - 좋은 예: "휴대폰에 들어가는 기억장치를 직접 만들어서, 그걸 자기 휴대폰에도 넣고
+     경쟁사에도 팔아 두 번 버는 회사입니다."
+   - 나쁜 예: "글로벌 종합 IT 솔루션 기업으로 다각화된 사업 포트폴리오를 보유합니다."
+8. `open_questions` 에는 **이 보고서만으로 답이 안 나온 것**을 적으십시오. 답을 아는
+   척하지 말고, 다음에 무엇을 더 봐야 하는지를 남기는 자리입니다. 물음표로 끝내십시오.
 """
 
 
@@ -314,8 +351,15 @@ def _failed_row(corp: DartCorp, disclosure: Disclosure | None, message: str) -> 
 
 
 def _is_complete(content: ReportAnalysisContent) -> bool:
-    """알맹이가 든 응답인지. 껍데기를 저장하면 캐시가 영원히 그것을 돌려준다."""
-    return bool(content.business_summary.strip()) and bool(content.key_risks)
+    """알맹이가 든 응답인지. 껍데기를 저장하면 캐시가 영원히 그것을 돌려준다.
+
+    `one_liner` 도 본다 — 카드 맨 위에 크게 놓이는 심장이라 비면 머리 없는 카드가 된다.
+    """
+    return (
+        bool(content.one_liner.strip())
+        and bool(content.business_summary.strip())
+        and bool(content.key_risks)
+    )
 
 
 # ---------------------------------------------------------------- 본체

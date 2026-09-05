@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { fetchKrAnalysis, runKrAnalysis } from '../lib/api'
 import type { KrAnalysis } from '../lib/api'
 import { Card } from './ui/Card'
+import { DecoderCard } from './analysis/DecoderCard'
 import { Skeleton } from './ui/Skeleton'
 
 // 국내 사업보고서 서술 분석 블록. 미국 쪽 TenKAnalysis 와 짝이다.
@@ -163,114 +164,58 @@ export function ReportAnalysis({ symbol }: Props) {
 
 function AnalysisBody({ analysis }: { analysis: KrAnalysis }) {
   return (
-    <div className="space-y-4 text-sm">
-      {/* 이 블록이 무엇이고 무엇이 아닌지를 맨 위에 못 박는다. 수치는 재무표가 담당한다. */}
-      <p className="rounded border border-neutral-800 bg-neutral-950/50 px-2.5 py-2 text-[11px] leading-relaxed text-neutral-500">
-        AI 가 사업보고서 원문을 읽고 정리한 <strong className="text-neutral-400">해석</strong>입니다.
-        수치는 담지 않습니다 — 매출·이익은 위 재무표(DART 원자료)를 보세요.
-        {analysis.truncated.length > 0 && (
-          <>
-            <br />
-            {analysis.truncated.join(', ')} 은 분량이 많아 앞부분만 반영됐습니다.
-          </>
-        )}
-      </p>
-
-      <Section title="사업">
-        <p className="leading-relaxed text-neutral-300">{analysis.business_summary}</p>
-        {analysis.segments.length > 0 && (
-          <ul className="mt-2 space-y-1">
-            {analysis.segments.map((segment) => (
-              <li key={segment} className="flex gap-2 text-xs text-neutral-400">
-                <span className="text-neutral-600">·</span>
-                <span>{segment}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Section>
-
-      {analysis.key_risks.length > 0 && (
-        <Section title="위험요인" note="보고서 곳곳에서 찾아낸 것">
-          <ul className="space-y-2.5">
-            {analysis.key_risks.map((risk) => (
-              <li key={risk.title}>
-                <div className="text-neutral-200">{risk.title}</div>
-                <p className="mt-1 text-xs leading-relaxed text-neutral-400">
-                  {risk.why_it_matters}
-                </p>
-                {/* 국내 보고서는 위험이 흩어져 있어 출처를 밝혀야 원문과 대조할 수 있다. */}
-                <p className="mt-1 text-[11px] text-neutral-600">출처: {risk.source}</p>
-              </li>
-            ))}
-          </ul>
-        </Section>
-      )}
-
-      {analysis.mdna_points.length > 0 && (
-        <Section title="경영진 설명" note="실적·전망의 근거로 회사가 든 것">
-          <ul className="space-y-1.5">
-            {analysis.mdna_points.map((point) => (
-              <li key={point} className="flex gap-2 text-xs leading-relaxed text-neutral-400">
-                <span className="shrink-0 text-neutral-600">·</span>
-                <span>{point}</span>
-              </li>
-            ))}
-          </ul>
-        </Section>
-      )}
-
-      {analysis.moat_and_competition && (
-        <Section title="경쟁 구도">
-          <p className="text-xs leading-relaxed text-neutral-400">
-            {analysis.moat_and_competition}
-          </p>
-        </Section>
-      )}
-
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-neutral-800 pt-2.5 text-[11px] text-neutral-600">
-        <span>{analysis.report_name}</span>
-        {analysis.received_date && (
-          <>
-            <span>·</span>
-            <span>{analysis.received_date} 접수</span>
-          </>
-        )}
-        {analysis.source_url && (
-          <>
-            <span>·</span>
-            {/* DART 원문. 해석이 미덥지 않으면 바로 대조할 수 있어야 한다. */}
-            <a
-              href={analysis.source_url}
-              target="_blank"
-              rel="noreferrer"
-              className="text-neutral-500 underline decoration-neutral-700 underline-offset-2 transition-colors hover:text-neutral-300"
-            >
-              원문 보기
-            </a>
-          </>
-        )}
-      </div>
-    </div>
-  )
-}
-
-function Section({
-  title,
-  note,
-  children,
-}: {
-  title: string
-  note?: string
-  children: React.ReactNode
-}) {
-  return (
-    <div>
-      <h3 className="mb-1.5 text-xs font-medium text-neutral-400">
-        {title}
-        {note && <span className="ml-1.5 font-normal text-neutral-600">{note}</span>}
-      </h3>
-      {children}
-    </div>
+    <DecoderCard
+      oneLiner={analysis.one_liner}
+      businessSummary={analysis.business_summary}
+      segments={analysis.segments}
+      /* 국내 프롬프트는 형식적 문구를 애초에 걸러 달라고 시키므로 전부 실질 위험이다.
+         미국(10-K)은 모델이 is_boilerplate 로 갈라 주는 것과 다른 점. */
+      realRisks={analysis.key_risks}
+      boilerplateRisks={[]}
+      mdnaPoints={analysis.mdna_points}
+      moat={analysis.moat_and_competition}
+      openQuestions={analysis.open_questions}
+      /* 국내는 "어느 장에서 나온 위험인가"가 꼬리표다. 사업보고서는 위험요인 장이 따로
+         없고 여러 장에 흩어져 있어서, 출처를 밝혀야 원문과 대조할 수 있다. */
+      riskTag={(_, i) => analysis.key_risks[i]?.source || null}
+      scopeNote={
+        <p className="rounded border border-neutral-800 bg-neutral-950/50 px-2.5 py-2 text-[11px] leading-relaxed text-neutral-500">
+          AI 가 사업보고서 원문을 읽고 정리한{' '}
+          <strong className="text-neutral-400">해석</strong>입니다. 수치는 담지 않습니다 —
+          매출·이익은 위 재무표(DART 원자료)를 보세요.
+          {analysis.truncated.length > 0 && (
+            <>
+              <br />
+              {analysis.truncated.join(', ')} 은 분량이 많아 앞부분만 반영됐습니다.
+            </>
+          )}
+        </p>
+      }
+      footer={
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-neutral-800 pt-2.5 text-[11px] text-neutral-600">
+          <span>{analysis.report_name}</span>
+          {analysis.received_date && (
+            <>
+              <span>·</span>
+              <span>{analysis.received_date} 접수</span>
+            </>
+          )}
+          {analysis.source_url && (
+            <>
+              <span>·</span>
+              {/* DART 원문. 해석이 미덥지 않으면 바로 대조할 수 있어야 한다. */}
+              <a
+                href={analysis.source_url}
+                target="_blank"
+                rel="noreferrer"
+                className="text-neutral-500 underline decoration-neutral-700 underline-offset-2 transition-colors hover:text-neutral-300"
+              >
+                원문 보기
+              </a>
+            </>
+          )}
+        </div>
+      }
+    />
   )
 }

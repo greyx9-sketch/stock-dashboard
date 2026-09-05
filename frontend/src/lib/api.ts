@@ -395,6 +395,12 @@ export type UsRiskItem = {
   is_boilerplate: boolean
 }
 
+/** 사업 부문 하나. 이름과 설명이 갈려 있어야 화면이 카드로 그린다. */
+export type AnalysisSegment = {
+  name: string
+  what: string
+}
+
 export type UsAnalysis = {
   /** ok=분석 있음 / none=아직 안 함 / pending=배치에 맡겨 둔 중 / failed=실패 */
   status: 'ok' | 'none' | 'pending' | 'failed'
@@ -407,11 +413,15 @@ export type UsAnalysis = {
   generated_at: string | null
   sections: string[]
   truncated: string[]
+  /** 이 회사가 뭘로 돈을 버는지 한 문장. 카드 맨 위에 크게 놓인다. */
+  one_liner: string | null
   business_summary: string | null
-  segments: string[]
+  segments: AnalysisSegment[]
   key_risks: UsRiskItem[]
   mdna_points: string[]
   moat_and_competition: string | null
+  /** 이 보고서만으로 답이 안 나온 것. 빈칸을 밝히는 쪽이 정직하다. */
+  open_questions: string[]
   error: string | null
 }
 
@@ -525,11 +535,15 @@ export type KrAnalysis = {
   generated_at: string | null
   sections: string[]
   truncated: string[]
+  /** 이 회사가 뭘로 돈을 버는지 한 문장. 카드 맨 위에 크게 놓인다. */
+  one_liner: string | null
   business_summary: string | null
-  segments: string[]
+  segments: AnalysisSegment[]
   key_risks: KrRiskItem[]
   mdna_points: string[]
   moat_and_competition: string | null
+  /** 이 보고서만으로 답이 안 나온 것. 빈칸을 밝히는 쪽이 정직하다. */
+  open_questions: string[]
   error: string | null
 }
 

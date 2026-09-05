@@ -28,6 +28,13 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/stocks", tags=["국내 주식 — 사업보고서 분석"])
 
 
+class SegmentOut(BaseModel):
+    """사업 부문 하나. 이름과 설명이 갈려 있어야 화면이 카드로 그린다."""
+
+    name: str
+    what: str = ""
+
+
 class RiskItemOut(BaseModel):
     title: str
     why_it_matters: str
@@ -52,11 +59,18 @@ class KrAnalysisOut(BaseModel):
     sections: list[str] = Field(default_factory=list)
     truncated: list[str] = Field(default_factory=list)
 
+    one_liner: str | None = Field(
+        default=None,
+        description="이 회사가 무엇으로 돈을 버는지 한 문장. 카드 맨 위에 크게 놓인다",
+    )
     business_summary: str | None = None
-    segments: list[str] = Field(default_factory=list)
+    segments: list[SegmentOut] = Field(default_factory=list)
     key_risks: list[RiskItemOut] = Field(default_factory=list)
     mdna_points: list[str] = Field(default_factory=list)
     moat_and_competition: str | None = None
+    open_questions: list[str] = Field(
+        default_factory=list, description="이 보고서만으로 답이 안 나온 질문"
+    )
 
     error: str | None = None
 
@@ -97,11 +111,13 @@ def _to_out(stock_code: str, row: DartAnalysis | None) -> KrAnalysisOut:
         generated_at=row.created_at.isoformat() if row.created_at else None,
         sections=_split(row.sections),
         truncated=_split(row.truncated),
+        one_liner=content.get("one_liner"),
         business_summary=content.get("business_summary"),
         segments=content.get("segments", []),
         key_risks=[RiskItemOut(**r) for r in content.get("key_risks", [])],
         mdna_points=content.get("mdna_points", []),
         moat_and_competition=content.get("moat_and_competition"),
+        open_questions=content.get("open_questions", []),
     )
 
 
