@@ -49,7 +49,7 @@ export function UpcomingEvents() {
   if (items.length === 0) return null
 
   return (
-    <div className="border-b border-neutral-900 bg-neutral-950/60">
+    <div className="border-b border-neutral-900 bg-neutral-950">
       {/* 휴대폰에서는 줄바꿈 대신 옆으로 민다. 네 건이 네 줄이 되면 화면 위쪽을
           통째로 차지해서 정작 시세가 안 보인다. */}
       <div className="mx-auto flex max-w-7xl flex-nowrap items-center gap-x-4 gap-y-1 overflow-x-auto px-3 py-1.5 text-xs sm:flex-wrap sm:px-4">

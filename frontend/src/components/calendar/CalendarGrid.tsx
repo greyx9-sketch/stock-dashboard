@@ -156,7 +156,7 @@ export function CalendarGrid({
                 <div
                   role="gridcell"
                   key={`blank-${rowIndex}-${columnIndex}`}
-                  className="min-h-16 bg-neutral-950/60 sm:min-h-24"
+                  className="min-h-16 bg-neutral-950 sm:min-h-24"
                 />
               )
             }

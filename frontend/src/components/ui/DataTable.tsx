@@ -147,7 +147,7 @@ export function DataTable<T>({
 
   return (
     <div
-      className={`overflow-x-auto ${embedded ? '' : 'rounded-lg shadow-edge'}`}
+      className={`overflow-x-auto ${embedded ? '' : 'rounded-lg bg-surface shadow-edge'}`}
     >
       <table className={`w-full ${minWidth} ${dense ? 'text-xs' : 'text-sm'} whitespace-nowrap`}>
         <caption className="sr-only">{caption}</caption>
@@ -155,7 +155,7 @@ export function DataTable<T>({
           className={
             embedded
               ? 'border-b border-neutral-800 text-xs text-neutral-500'
-              : 'bg-neutral-900 text-xs text-neutral-400'
+              : 'bg-surface-raised text-xs text-neutral-400'
           }
         >
           <tr>

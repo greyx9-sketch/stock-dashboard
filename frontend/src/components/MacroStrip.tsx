@@ -56,7 +56,7 @@ export function MacroStrip() {
   }
 
   return (
-    <div className="border-b border-neutral-800 bg-neutral-950/60">
+    <div className="border-b border-neutral-800 bg-neutral-950">
       {/* 좁은 화면에서는 가로로 스크롤한다. 7개를 억지로 줄여 넣으면 숫자가 읽히지 않는다. */}
       <div className="flex gap-x-6 overflow-x-auto px-4 py-2">
         {items.map((item) => (
