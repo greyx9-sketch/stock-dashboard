@@ -202,6 +202,18 @@ function AnalysisBody({ analysis }: { analysis: KrAnalysis }) {
               <span>{analysis.received_date} 접수</span>
             </>
           )}
+          {/* 사업의 내용은 최신 분·반기에서, 경영진단은 사업보고서에서 온다.
+              어느 시점 자료인지 밝히지 않으면 사용자는 전부 반년 묵은 것으로 읽는다. */}
+          {analysis.recent_report_name && (
+            <>
+              <span>·</span>
+              <span className="text-neutral-500">
+                사업 내용은 {analysis.recent_report_name}
+                {analysis.recent_received_date ? ` (${analysis.recent_received_date} 접수)` : ''}{' '}
+                기준
+              </span>
+            </>
+          )}
           {analysis.source_url && (
             <>
               <span>·</span>

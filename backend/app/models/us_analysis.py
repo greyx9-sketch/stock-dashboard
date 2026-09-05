@@ -57,6 +57,18 @@ class SecAnalysis(Base):
     # 길이 상한에 걸려 잘린 항목. 같은 이유로 남긴다.
     truncated: Mapped[str] = mapped_column(String(80), default="")
 
+    # 경영진 논의를 어느 10-Q 에서 가져왔는지. 비어 있으면 연차의 Item 7 을 썼다는 뜻이다.
+    #
+    # 이걸 남기는 이유가 둘이다. 하나는 화면 각주에 "어느 시점 자료인가"를 밝히기 위해서고,
+    # 다른 하나는 **새 분기보고서가 나왔는지 판단하기 위해서다** — `_should_rerun` 이 이
+    # 값과 지금의 최신 10-Q 를 견줘, 다르면 다시 분석할 때가 됐다고 본다.
+    #
+    # server_default 를 반드시 준다. 없으면 SQLite 가 기존 표에 컬럼 붙이기를 거절하고
+    # schema_sync 는 설계대로 경고만 남기고 넘어간다(2026-09-01 에 이것으로 조회가 전부
+    # 500 이 났다. `tests/test_schema_sync.py` 끝 주석 참고).
+    quarterly_accession: Mapped[str] = mapped_column(String(25), default="", server_default="")
+    quarterly_filed_date: Mapped[str] = mapped_column(String(10), default="", server_default="")
+
     # 비용 기록. input_tokens 가 0 이면 API 를 부르지 않았다는 뜻이고,
     # 하루 호출 상한을 셀 때 이 값으로 실제 호출만 골라낸다.
     input_tokens: Mapped[int] = mapped_column(Integer, default=0)

@@ -204,6 +204,9 @@ def html_to_text(html: str) -> str:
 _TITLES = {
     "1": r"business",
     "1a": r"risk\s*factors?",
+    # 10-Q 의 MD&A 는 Part I 의 **Item 2** 다(10-K 는 Item 7). 10-K 에서 Item 2 는
+    # "Properties" 라 뜻이 전혀 다른데, 제목 단어를 함께 보므로 서로 걸리지 않는다.
+    "2": r"management|discussion\s+and\s+analysis",
     "7": r"management|discussion\s+and\s+analysis",
 }
 
@@ -360,6 +363,53 @@ def extract_sections(text: str) -> TenKSections:
         truncated=truncated,
         mdna_from_reference=from_reference,
     )
+
+
+@dataclass(frozen=True)
+class TenQSections:
+    """10-Q 에서 쓸 만한 두 조각. 10-K 와 달리 사업 설명(Item 1)이 없다.
+
+    분기보고서에는 회사가 무엇을 하는지가 실려 있지 않다 — 그건 연차보고서의 몫이다.
+    대신 **최근 석 달의 변화**가 있다:
+
+    · Item 1A 위험요인 — 연차 이후 달라진 것. 보통 "중대한 변경 없음" 한 줄이지만,
+      바뀐 해에는 여기가 가장 빠른 신호다.
+    · Item 2 MD&A — 이번 분기 실적을 경영진이 어떻게 설명하는가. **국내 분·반기보고서와
+      결정적으로 다른 점이다**(국내는 법령상 분·반기에 경영진단을 싣지 않는다).
+    """
+
+    risk_factors: str
+    mdna: str
+    truncated: tuple[str, ...] = ()
+
+    @property
+    def is_empty(self) -> bool:
+        return not (self.risk_factors or self.mdna)
+
+    @property
+    def found(self) -> tuple[str, ...]:
+        names = []
+        if self.risk_factors:
+            names.append("10-Q Item 1A")
+        if self.mdna:
+            names.append("10-Q Item 2")
+        return tuple(names)
+
+
+def extract_10q_sections(text: str) -> TenQSections:
+    """평문 10-Q 에서 위험요인과 MD&A 를 잘라낸다.
+
+    10-Q 는 Part I(재무)와 Part II(그 밖)로 나뉘고 항목 번호가 파트마다 다시 1 부터
+    시작한다. `_positions` 가 `part …` 접두를 이미 허용하므로 번호만 바꿔 주면 된다.
+    """
+    risk, cut_risk = _section(text, "1a", ["1b", "2", "3"], LIMIT_RISK)
+    mdna, cut_mdna = _section(text, "2", ["3", "4"], LIMIT_MDNA)
+    truncated = tuple(
+        name
+        for name, cut in (("10-Q Item 1A", cut_risk), ("10-Q Item 2", cut_mdna))
+        if cut
+    )
+    return TenQSections(risk_factors=risk, mdna=mdna, truncated=truncated)
 
 
 def extract_from_html(html: str) -> TenKSections:

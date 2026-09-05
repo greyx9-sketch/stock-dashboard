@@ -55,6 +55,16 @@ class DartAnalysis(Base):
     sections: Mapped[str] = mapped_column(String(120), default="")
     truncated: Mapped[str] = mapped_column(String(120), default="")
 
+    # 사업의 내용·투자자 보호사항을 어느 분·반기보고서에서 가져왔는지. 비어 있으면
+    # 사업보고서 것만 썼다는 뜻이다.
+    #
+    # 화면 각주에 "어느 시점 자료인가"를 밝히고, **새 분·반기보고서가 나왔는지 판단**
+    # 하는 데 쓴다(`_should_rerun`). server_default 를 반드시 준다 — 없으면 SQLite 가
+    # 기존 표에 컬럼 붙이기를 거절한다(2026-09-01 사고, tests/test_schema_sync.py 참고).
+    recent_receipt_no: Mapped[str] = mapped_column(String(20), default="", server_default="")
+    recent_report_name: Mapped[str] = mapped_column(String(120), default="", server_default="")
+    recent_received_date: Mapped[str] = mapped_column(String(10), default="", server_default="")
+
     input_tokens: Mapped[int] = mapped_column(Integer, default=0)
     output_tokens: Mapped[int] = mapped_column(Integer, default=0)
     cost_micro_usd: Mapped[int] = mapped_column(Integer, default=0)

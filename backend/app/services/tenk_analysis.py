@@ -41,6 +41,8 @@ from app.services import analysis_batch, llm_budget
 from app.services.tenk_extract import (
     TenKExtractError,
     TenKSections,
+    TenQSections,
+    extract_10q_sections,
     extract_sections,
     html_to_text,
 )
@@ -61,7 +63,12 @@ MODEL = "claude-sonnet-5"
 #     · `open_questions` 추가 — 이 분석으로 답이 안 나온 것. 빈칸을 밝히는 쪽이 정직하다.
 #     스키마가 바뀌었으므로 버전을 올린다. 옛 결과(v2 5건)는 지워지지 않고 남지만
 #     화면에는 안 나온다. 다시 분석하면 새 카드로 채워진다.
-PROMPT_VERSION = 3
+#
+# v4: **경영진 논의를 최신 10-Q 에서 가져온다**(2026-09-06). 10-K 의 Item 7 은 카드를
+#     볼 시점에 1년 가까이 묵어 있다. 사업(Item 1)과 위험(Item 1A)은 그대로 연차에서
+#     가져온다 — 10-Q 에는 사업 설명이 없고, 10-Q 의 위험은 변경분이라 단독으로 쓰면
+#     빠지는 것이 생긴다. 보내는 양은 거의 그대로다(Item 7 을 Item 2 로 바꿔 담을 뿐).
+PROMPT_VERSION = 4
 
 MAX_OUTPUT_TOKENS = 16_000
 # 섹션 글자 상한(18만 자 ≈ 4.5만 토큰) 때문에 실제로는 거의 걸리지 않는다.
@@ -182,11 +189,22 @@ SYSTEM_PROMPT = """\
 
 @dataclass(frozen=True)
 class _Document:
-    """분석 대상 문서 한 건."""
+    """분석 대상 문서. 연차(10-K) 한 건 + 있으면 최신 분기(10-Q) 한 건.
+
+    **왜 둘을 같이 읽나**: 10-K 는 회계연도가 끝나고 몇 달 뒤에 나오므로, 카드를 볼
+    시점에는 경영진 설명이 1년 가까이 묵어 있다. 10-Q 의 MD&A(Item 2)는 몇 주 전
+    것이다. 반대로 사업 설명(Item 1)은 10-Q 에 아예 없다 — 그건 연차의 몫이다.
+    그래서 **사업·위험은 연차에서, 경영진 설명은 최신 분기에서** 가져온다.
+
+    (국내는 정반대다. 분·반기보고서에는 법령상 경영진단을 싣지 않아서, 국내는
+    사업·위험을 최신 분·반기에서 가져오고 경영진단만 사업보고서에서 가져온다.)
+    """
 
     company: SecCompany
     filing: UsFiling
     sections: TenKSections
+    quarterly: UsFiling | None = None
+    quarterly_sections: TenQSections | None = None
 
     @property
     def fiscal_year(self) -> int:
@@ -204,10 +222,25 @@ def _build_prompt(doc: _Document, sections: TenKSections) -> str:
         f"{doc.filing.report_date or '미상'}",
         "",
     ]
+    # 경영진 설명은 최신 분기(10-Q Item 2)가 있으면 그것을 쓴다. 연차의 Item 7 은
+    # 같은 이야기를 1년 묵은 채로 하므로 **둘을 같이 보내지 않는다** — 토큰만 늘고
+    # 모델이 어느 시점 이야기인지 헷갈린다.
+    if doc.quarterly is not None and doc.quarterly_sections is not None:
+        mdna_body = doc.quarterly_sections.mdna
+        mdna_label = f"10-Q Item 2 경영진 논의·분석 ({doc.quarterly.filing_date} 제출 · 최신 분기)"
+        parts.insert(
+            2,
+            f"최신 분기보고서: 10-Q · {doc.quarterly.filing_date} 제출"
+            " — 경영진 논의는 이 분기 것을 싣습니다.",
+        )
+    else:
+        mdna_body = sections.mdna
+        mdna_label = "Item 7 경영진 논의·분석"
+
     for tag, label, body in (
         ("item_1_business", "Item 1 사업", sections.business),
         ("item_1a_risk_factors", "Item 1A 위험요인", sections.risk_factors),
-        ("item_7_mdna", "Item 7 경영진 논의·분석", sections.mdna),
+        ("mdna", mdna_label, mdna_body),
     ):
         if body:
             parts.append(f"<{tag} label=\"{label}\">\n{body}\n</{tag}>\n")
@@ -217,7 +250,7 @@ def _build_prompt(doc: _Document, sections: TenKSections) -> str:
         for label, body in (
             ("Item 1", sections.business),
             ("Item 1A", sections.risk_factors),
-            ("Item 7", sections.mdna),
+            ("경영진 논의", mdna_body),
         )
         if not body
     ]
@@ -312,16 +345,49 @@ def _failed_row(doc: _Document, message: str) -> SecAnalysis:
 # ---------------------------------------------------------------- 본체
 
 
-async def _latest_10k(company: SecCompany) -> UsFiling:
+async def _latest_filings(company: SecCompany) -> tuple[UsFiling, UsFiling | None]:
+    """최신 10-K 와 최신 10-Q 를 **제출목록 한 번**으로 함께 뽑는다.
+
+    따로 부르면 같은 목록을 두 번 받는다. SEC 는 초당 상한이 빡빡해서 아낄 이유가 있다.
+    10-Q 는 없을 수 있다 — 회계연도 4분기 자리에는 내지 않고, 신규 상장사는 아직 없다.
+    """
     async with SecClient() as sec:
         submissions = await sec.get_submissions(company.cik)
-    filings = SecClient.parse_filings(submissions, forms=("10-K", "10-K/A"), limit=1)
-    if not filings:
+    annual = SecClient.parse_filings(submissions, forms=("10-K", "10-K/A"), limit=1)
+    if not annual:
         raise AnalysisError(
             f"'{company.ticker}' 의 10-K 를 찾지 못했습니다.\n"
             "10-K 를 내지 않는 외국 발행사(20-F 제출)이거나 신규 상장일 수 있습니다."
         )
-    return filings[0]
+    quarterly = SecClient.parse_filings(submissions, forms=("10-Q",), limit=1)
+    return annual[0], (quarterly[0] if quarterly else None)
+
+
+async def _fetch_10q_sections(filing: UsFiling) -> TenQSections:
+    async with SecClient() as sec:
+        html = await sec.get_filing_document(filing)
+    text = await asyncio.to_thread(html_to_text, html)
+    return await asyncio.to_thread(extract_10q_sections, text)
+
+
+async def _fetch_quarterly(
+    company: SecCompany, filing: UsFiling | None
+) -> tuple[UsFiling, TenQSections] | None:
+    """최신 10-Q 와 그 안의 MD&A. **실패해도 분석을 멈추지 않는다.**
+
+    이것은 신선도를 더하는 곁가지다. 연차보고서만으로도 카드는 완성된다 —
+    여기서 예외가 새어 나가면 곁가지 때문에 본체가 죽는다(조사 문서 B-4 와 같은 규칙).
+    """
+    if filing is None:
+        return None
+    try:
+        sections = await _fetch_10q_sections(filing)
+    except (SecError, TenKExtractError, AnalysisError) as exc:
+        logger.warning("%s 10-Q 를 읽지 못해 연차보고서만으로 분석합니다: %s", company.ticker, exc)
+        return None
+    if not sections.mdna:
+        return None
+    return filing, sections
 
 
 async def _fetch_sections(filing: UsFiling) -> TenKSections:
@@ -428,16 +494,23 @@ def _is_complete(content: TenKAnalysisContent) -> bool:
 
 async def analyze(company: SecCompany, *, force: bool = False) -> SecAnalysis:
     """최신 10-K 를 분석한다. 이미 있으면 그대로 돌려주고 API 를 부르지 않는다."""
-    filing = await _latest_10k(company)
+    # 10-K 와 최신 10-Q 를 함께 잡는다. 분기가 바뀌었으면 카드를 다시 만들 값어치가
+    # 있으므로, 캐시를 볼 때 그 판단에 쓴다.
+    filing, quarterly_filing = await _latest_filings(company)
+    quarterly_accession = quarterly_filing.accession_no if quarterly_filing else ""
 
     existing = _find(filing.accession_no)
-    if existing is not None and not _should_rerun(existing, force=force):
+    if existing is not None and not _should_rerun(
+        existing, force=force, quarterly_accession=quarterly_accession
+    ):
         return existing
 
     async with llm_budget.call_lock:
         # 잠금을 기다리는 사이 다른 요청이 이미 끝냈을 수 있다.
         existing = _find(filing.accession_no)
-        if existing is not None and not _should_rerun(existing, force=force):
+        if existing is not None and not _should_rerun(
+        existing, force=force, quarterly_accession=quarterly_accession
+    ):
             return existing
 
         try:
@@ -452,7 +525,15 @@ async def analyze(company: SecCompany, *, force: bool = False) -> SecAnalysis:
             # 여기까지는 돈이 들지 않았다. 실패를 남기되 다음 요청에서 다시 시도된다.
             return _save(_failed_row(doc_stub, str(exc)))
 
-        doc = _Document(company=company, filing=filing, sections=sections)
+        # 최신 분기(10-Q)의 경영진 논의를 곁들인다. 못 읽어도 분석은 그대로 진행된다.
+        quarterly = await _fetch_quarterly(company, quarterly_filing)
+        doc = _Document(
+            company=company,
+            filing=filing,
+            sections=sections,
+            quarterly=quarterly[0] if quarterly else None,
+            quarterly_sections=quarterly[1] if quarterly else None,
+        )
         client = _client()
         try:
             content, used_sections, in_tok, out_tok = await _call_model(client, doc)
@@ -477,6 +558,8 @@ async def analyze(company: SecCompany, *, force: bool = False) -> SecAnalysis:
             source_url=filing.viewer_url,
             content_json=content.model_dump_json(),
             sections=",".join(used_sections.found),
+            quarterly_accession=doc.quarterly.accession_no if doc.quarterly else "",
+            quarterly_filed_date=doc.quarterly.filing_date if doc.quarterly else "",
             truncated=",".join(used_sections.truncated),
             input_tokens=in_tok,
             output_tokens=out_tok,
@@ -498,13 +581,28 @@ async def analyze(company: SecCompany, *, force: bool = False) -> SecAnalysis:
 _EMPTY = TenKSections(business="", risk_factors="", mdna="")
 
 
-def _should_rerun(row: SecAnalysis, *, force: bool) -> bool:
+def _should_rerun(
+    row: SecAnalysis, *, force: bool, quarterly_accession: str | None = None
+) -> bool:
     """저장된 행이 있는데도 다시 부를지.
 
-    성공한 분석은 force 여도 다시 부르지 않는다 — 같은 문서를 다시 분석해 얻는 것이
+    성공한 분석은 force 여도 다시 부르지 않는다 — 같은 10-K 를 다시 분석해 얻는 것이
     없고 돈만 든다. 프롬프트를 고쳤으면 PROMPT_VERSION 을 올리는 것이 올바른 방법이다.
+
+    **예외가 하나 생겼다(2026-09-06).** 경영진 논의를 최신 10-Q 에서 가져오게 되면서,
+    같은 10-K 라도 그 뒤에 새 분기보고서가 나왔으면 카드가 낡은 것이 된다. 그때는
+    다시 분석할 값어치가 있다 — 얻는 것이 있기 때문이다.
+
+    이 문은 열되 돈은 기존 울타리가 막는다. 자동 분석은 관심종목만, 하루 상한 안에서,
+    사람 몫 5건을 남기고, 반값 배치로 간다(`auto_analysis.py`).
     """
     if row.status == STATUS_OK:
+        if (
+            quarterly_accession is not None
+            and quarterly_accession != ""
+            and quarterly_accession != row.quarterly_accession
+        ):
+            return True
         return False
     # 배치에 맡겨 두고 기다리는 중이면 건드리지 않는다. 다시 부르면 같은 문서를 두 번
     # 사는 것이고, 곧 도착할 결과가 이 행을 덮어쓴다.
@@ -542,15 +640,22 @@ async def prepare_batch(company: SecCompany) -> object | None:
     돈이 드는 단계 직전까지 여기서 다 한다 — 최신 보고서 찾기, 원문 받기, 항목 추출,
     프롬프트 길이 맞추기. 실패하면 그 이유를 행으로 남기고 None 을 돌려준다(동기 경로와 같다).
     """
-    filing = await _latest_10k(company)
+    # 10-K 와 최신 10-Q 를 함께 잡는다. 분기가 바뀌었으면 카드를 다시 만들 값어치가
+    # 있으므로, 캐시를 볼 때 그 판단에 쓴다.
+    filing, quarterly_filing = await _latest_filings(company)
+    quarterly_accession = quarterly_filing.accession_no if quarterly_filing else ""
 
     existing = _find(filing.accession_no)
-    if existing is not None and not _should_rerun(existing, force=False):
+    if existing is not None and not _should_rerun(
+        existing, force=False, quarterly_accession=quarterly_accession
+    ):
         return None
 
     async with llm_budget.call_lock:
         existing = _find(filing.accession_no)
-        if existing is not None and not _should_rerun(existing, force=False):
+        if existing is not None and not _should_rerun(
+        existing, force=False, quarterly_accession=quarterly_accession
+    ):
             return None
 
         try:
@@ -565,7 +670,15 @@ async def prepare_batch(company: SecCompany) -> object | None:
             _save(_failed_row(doc_stub, str(exc)))
             return None
 
-        doc = _Document(company=company, filing=filing, sections=sections)
+        # 최신 분기(10-Q)의 경영진 논의를 곁들인다. 못 읽어도 분석은 그대로 진행된다.
+        quarterly = await _fetch_quarterly(company, quarterly_filing)
+        doc = _Document(
+            company=company,
+            filing=filing,
+            sections=sections,
+            quarterly=quarterly[0] if quarterly else None,
+            quarterly_sections=quarterly[1] if quarterly else None,
+        )
         client = _client()
         try:
             prompt, used_sections, in_tok = await _fit_prompt(client, doc)
@@ -596,6 +709,8 @@ async def prepare_batch(company: SecCompany) -> object | None:
                 source_url=filing.viewer_url,
                 content_json="",
                 sections=",".join(used_sections.found),
+            quarterly_accession=doc.quarterly.accession_no if doc.quarterly else "",
+            quarterly_filed_date=doc.quarterly.filing_date if doc.quarterly else "",
                 truncated=",".join(used_sections.truncated),
                 input_tokens=in_tok,
                 output_tokens=0,

@@ -62,6 +62,10 @@ class UsAnalysisOut(BaseModel):
     truncated: list[str] = Field(
         default_factory=list, description="길이 상한에 걸려 앞부분만 넣은 항목"
     )
+    quarterly_filed_date: str | None = Field(
+        default=None,
+        description="경영진 논의를 가져온 10-Q 의 제출일. 없으면 연차의 Item 7 을 썼다는 뜻",
+    )
 
     one_liner: str | None = Field(
         default=None,
@@ -115,6 +119,7 @@ def _to_out(ticker: str, row: SecAnalysis | None) -> UsAnalysisOut:
         generated_at=row.created_at.isoformat() if row.created_at else None,
         sections=_split(row.sections),
         truncated=_split(row.truncated),
+        quarterly_filed_date=row.quarterly_filed_date or None,
         one_liner=content.get("one_liner"),
         business_summary=content.get("business_summary"),
         segments=content.get("segments", []),

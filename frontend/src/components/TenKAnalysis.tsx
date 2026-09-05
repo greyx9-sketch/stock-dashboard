@@ -206,6 +206,16 @@ function AnalysisBody({ analysis }: { analysis: UsAnalysis }) {
           </span>
           <span>·</span>
           <span>{analysis.filed_date} 제출</span>
+          {/* 경영진 논의만 최신 분기에서 온다. 어느 시점 자료인지 밝히지 않으면
+              사용자는 카드 전체가 1년 묵은 것으로 읽는다. */}
+          {analysis.quarterly_filed_date && (
+            <>
+              <span>·</span>
+              <span className="text-neutral-500">
+                경영진 논의는 10-Q ({analysis.quarterly_filed_date} 제출) 기준
+              </span>
+            </>
+          )}
           {analysis.source_url && (
             <>
               <span>·</span>

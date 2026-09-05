@@ -58,6 +58,11 @@ class KrAnalysisOut(BaseModel):
     generated_at: str | None = None
     sections: list[str] = Field(default_factory=list)
     truncated: list[str] = Field(default_factory=list)
+    recent_report_name: str | None = Field(
+        default=None,
+        description="사업의 내용을 가져온 최신 분·반기보고서. 없으면 사업보고서만 썼다는 뜻",
+    )
+    recent_received_date: str | None = None
 
     one_liner: str | None = Field(
         default=None,
@@ -111,6 +116,8 @@ def _to_out(stock_code: str, row: DartAnalysis | None) -> KrAnalysisOut:
         generated_at=row.created_at.isoformat() if row.created_at else None,
         sections=_split(row.sections),
         truncated=_split(row.truncated),
+        recent_report_name=row.recent_report_name or None,
+        recent_received_date=row.recent_received_date or None,
         one_liner=content.get("one_liner"),
         business_summary=content.get("business_summary"),
         segments=content.get("segments", []),

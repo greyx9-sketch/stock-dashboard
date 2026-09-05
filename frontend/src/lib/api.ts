@@ -413,6 +413,8 @@ export type UsAnalysis = {
   generated_at: string | null
   sections: string[]
   truncated: string[]
+  /** 경영진 논의를 가져온 10-Q 의 제출일. 없으면 연차의 Item 7 을 썼다는 뜻. */
+  quarterly_filed_date: string | null
   /** 이 회사가 뭘로 돈을 버는지 한 문장. 카드 맨 위에 크게 놓인다. */
   one_liner: string | null
   business_summary: string | null
@@ -535,6 +537,9 @@ export type KrAnalysis = {
   generated_at: string | null
   sections: string[]
   truncated: string[]
+  /** 사업의 내용을 가져온 최신 분·반기보고서. 없으면 사업보고서만 썼다는 뜻. */
+  recent_report_name: string | null
+  recent_received_date: string | null
   /** 이 회사가 뭘로 돈을 버는지 한 문장. 카드 맨 위에 크게 놓인다. */
   one_liner: string | null
   business_summary: string | null

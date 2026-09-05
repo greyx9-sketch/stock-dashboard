@@ -57,7 +57,14 @@ MODEL = "claude-sonnet-5"
 # v2: 미국(10-K) 쪽과 같은 이유로 카드용 필드를 넣었다(2026-09-06).
 #     `one_liner`(업계 용어 금지 한 문장) · `segments` 를 {name, what} 으로 ·
 #     `open_questions`(답이 안 나온 것). 두 시장의 카드가 같은 모양이어야 한다.
-PROMPT_VERSION = 2
+#
+# v3: **사업의 내용과 투자자 보호사항을 최신 분·반기보고서에서 가져온다**(2026-09-06).
+#     사업보고서는 결산 후 3개월 뒤에 나오므로 카드를 볼 시점엔 반년이 묵어 있다.
+#     경영진단만 사업보고서에 남긴다 — 분·반기보고서에는 **법령상 싣지 않는다**
+#     ("기업공시서식 작성기준에 따라 분ㆍ반기보고서에 기재하지 않습니다"라고 본문에
+#     적혀 있다). 실제로 삼성전자 반기보고서의 그 자리는 508자짜리 안내문뿐이었다.
+#     (미국은 정반대다 — 10-Q 에 사업 설명이 없어서 사업·위험을 연차에서 가져온다.)
+PROMPT_VERSION = 3
 
 MAX_OUTPUT_TOKENS = 16_000
 MAX_INPUT_TOKENS = 180_000
@@ -176,9 +183,19 @@ SYSTEM_PROMPT = """\
 
 @dataclass(frozen=True)
 class _Report:
+    """분석 대상. 사업보고서 한 건 + 있으면 그보다 새 분·반기보고서 한 건.
+
+    **왜 둘을 같이 읽나**: 사업보고서는 결산 후 3개월 뒤에 나와서 카드를 볼 시점엔
+    반년이 묵어 있다. 분·반기보고서의 `사업의 내용`은 분량이 거의 같으면서 훨씬
+    새것이고, `투자자 보호사항`(소송·제재·계약 진행)은 오히려 더 풍부하다.
+    다만 `경영진단`은 **법령상 분·반기보고서에 싣지 않으므로** 사업보고서에서만 온다.
+    """
+
     corp: DartCorp
     disclosure: Disclosure
     sections: ReportSections
+    recent: Disclosure | None = None
+    recent_sections: ReportSections | None = None
 
     @property
     def fiscal_year(self) -> int:
@@ -217,6 +234,66 @@ async def _annual_candidates(corp: DartCorp) -> list[Disclosure]:
     return [d for d in items if is_annual_report(d.report_name)][:MAX_CANDIDATES]
 
 
+async def _recent_periodic(corp: DartCorp, annual: Disclosure) -> Disclosure | None:
+    """사업보고서보다 **뒤에 나온** 최신 분·반기보고서. 없으면 None.
+
+    사업보고서는 결산 후 3개월 뒤에 나오므로, 그 뒤로 분기·반기보고서가 한두 건 더
+    나와 있는 것이 보통이다. 거기 실린 `사업의 내용`은 연차와 분량이 거의 같으면서
+    반년쯤 새것이고, `투자자 보호사항`(소송·제재·계약 진행)은 오히려 더 풍부하다.
+    """
+    async with DartClient() as dart:
+        items = await dart.get_disclosures(
+            corp.corp_code,
+            begin=date(today_kst().year - 1, 1, 1),
+            end=today_kst(),
+            count=100,
+            report_type="A",  # 정기공시
+            final_only=False,
+        )
+    newer = [
+        d
+        for d in items
+        if not is_annual_report(d.report_name) and d.received_date > annual.received_date
+    ]
+    # 접수일 내림차순. 정정본이 있으면 그것이 먼저 온다.
+    newer.sort(key=lambda d: d.received_date, reverse=True)
+    return newer[0] if newer else None
+
+
+async def _safe_recent_periodic(corp: DartCorp, annual: Disclosure) -> Disclosure | None:
+    """최신 분·반기보고서 **목록 조회만**. 실패하면 None.
+
+    원문(수 MB)은 여기서 받지 않는다. 캐시 확인에는 접수번호만 있으면 되고,
+    이미 분석된 종목의 원문을 매번 내려받는 것은 낭비다.
+    """
+    try:
+        return await _recent_periodic(corp, annual)
+    except DartError as exc:
+        logger.warning("%s 최신 분·반기보고서 목록을 받지 못했습니다: %s", corp.corp_name, exc)
+        return None
+
+
+async def _fetch_recent_sections(
+    corp: DartCorp, recent: Disclosure | None
+) -> ReportSections | None:
+    """최신 분·반기보고서의 절들. **실패해도 분석을 멈추지 않는다.**
+
+    신선도를 더하는 곁가지다. 사업보고서만으로도 카드는 완성된다 — 여기서 예외가
+    새어 나가면 곁가지 때문에 본체가 죽는다.
+    """
+    if recent is None:
+        return None
+    try:
+        async with DartClient() as dart:
+            documents = await dart.get_document(recent.receipt_no)
+        body = main_document(documents, recent.receipt_no)
+        sections = await asyncio.to_thread(extract_sections, body)
+    except (DartError, DartExtractError) as exc:
+        logger.warning("%s 최신 분·반기보고서를 읽지 못했습니다: %s", corp.corp_name, exc)
+        return None
+    return sections if sections.business else None
+
+
 async def _fetch_sections(candidates: list[Disclosure]) -> tuple[Disclosure, ReportSections]:
     """후보를 순서대로 시도해 첫 번째로 읽히는 것을 쓴다."""
     problems: list[str] = []
@@ -248,10 +325,28 @@ def _build_prompt(report: _Report, sections: ReportSections) -> str:
         f"보고서: {report.disclosure.report_name} · {report.disclosure.received_date} 접수",
         "",
     ]
+    # 사업의 내용과 투자자 보호사항은 최신 분·반기보고서가 있으면 그쪽을 쓴다.
+    # **경영진단은 언제나 사업보고서 것이다** — 분·반기보고서에는 법령상 싣지 않는다.
+    if report.recent is not None and report.recent_sections is not None:
+        business_body = report.recent_sections.business
+        investor_body = report.recent_sections.investor
+        stamp = f" ({report.recent.report_name} 기준)"
+        parts.insert(
+            2,
+            f"최신 정기보고서: {report.recent.report_name} · "
+            f"{report.recent.received_date} 접수 — 사업의 내용과 투자자 보호사항은"
+            " 이 보고서 것을 싣습니다. 경영진단은 분·반기보고서에 실리지 않으므로"
+            " 사업보고서 것입니다.",
+        )
+    else:
+        business_body = sections.business
+        investor_body = sections.investor
+        stamp = ""
+
     for tag, label, body in (
-        ("사업의_내용", "II. 사업의 내용", sections.business),
+        ("사업의_내용", f"II. 사업의 내용{stamp}", business_body),
         ("경영진단", "IV. 이사의 경영진단 및 분석의견", sections.mdna),
-        ("투자자_보호사항", "XI. 그 밖에 투자자 보호를 위하여 필요한 사항", sections.investor),
+        ("투자자_보호사항", f"XI. 그 밖에 투자자 보호를 위하여 필요한 사항{stamp}", investor_body),
     ):
         if body:
             parts.append(f"<{tag} label=\"{label}\">\n{body}\n</{tag}>\n")
@@ -259,9 +354,9 @@ def _build_prompt(report: _Report, sections: ReportSections) -> str:
     missing = [
         label
         for label, body in (
-            ("사업의 내용", sections.business),
+            ("사업의 내용", business_body),
             ("경영진단", sections.mdna),
-            ("투자자 보호사항", sections.investor),
+            ("투자자 보호사항", investor_body),
         )
         if not body
     ]
@@ -426,13 +521,28 @@ async def _call_model(
     )
 
 
-def _should_rerun(row: DartAnalysis, *, force: bool) -> bool:
+def _should_rerun(
+    row: DartAnalysis, *, force: bool, recent_receipt_no: str | None = None
+) -> bool:
     """저장된 행이 있는데도 다시 부를지.
 
-    성공한 분석은 force 여도 다시 부르지 않는다 — 같은 문서를 다시 분석해 얻는 것이
-    없고 돈만 든다. 프롬프트를 고쳤으면 PROMPT_VERSION 을 올리는 것이 올바른 방법이다.
+    성공한 분석은 force 여도 다시 부르지 않는다 — 같은 사업보고서를 다시 분석해 얻는
+    것이 없고 돈만 든다. 프롬프트를 고쳤으면 PROMPT_VERSION 을 올리는 것이 정도다.
+
+    **예외가 하나 생겼다(2026-09-06).** 사업의 내용을 최신 분·반기보고서에서 가져오게
+    되면서, 같은 사업보고서라도 그 뒤에 새 분기·반기가 나왔으면 카드가 낡은 것이 된다.
+    그때는 다시 분석할 값어치가 있다 — 얻는 것이 있기 때문이다.
+
+    이 문은 열되 돈은 기존 울타리가 막는다. 자동 분석은 관심종목만, 하루 상한 안에서,
+    사람 몫 5건을 남기고, 반값 배치로 간다(`auto_analysis.py`).
     """
     if row.status == STATUS_OK:
+        if (
+            recent_receipt_no is not None
+            and recent_receipt_no != ""
+            and recent_receipt_no != row.recent_receipt_no
+        ):
+            return True
         return False
     # 배치에 맡겨 두고 기다리는 중이면 건드리지 않는다. 다시 부르면 같은 문서를 두 번
     # 사는 것이고, 곧 도착할 결과가 이 행을 덮어쓴다.
@@ -458,15 +568,25 @@ async def analyze(corp: DartCorp, *, force: bool = False) -> DartAnalysis:
 
     # 후보 중 하나라도 이미 분석돼 있으면 그대로 쓴다. 원문을 받기 전에 확인해
     # 수 MB 다운로드를 아낀다.
+    #
+    # 최신 분·반기보고서의 접수번호를 먼저 구한다. 그 뒤에 새것이 나왔으면 저장된
+    # 카드가 낡은 것이므로 다시 분석해야 하고, 그 판단을 캐시 확인에 넣어야 한다.
+    recent_meta = await _safe_recent_periodic(corp, candidates[0])
+    recent_receipt_no = recent_meta.receipt_no if recent_meta else ""
+
     for disclosure in candidates:
         existing = _find(disclosure.receipt_no)
-        if existing is not None and not _should_rerun(existing, force=force):
+        if existing is not None and not _should_rerun(
+            existing, force=force, recent_receipt_no=recent_receipt_no
+        ):
             return existing
 
     async with llm_budget.call_lock:
         for disclosure in candidates:
             existing = _find(disclosure.receipt_no)
-            if existing is not None and not _should_rerun(existing, force=force):
+            if existing is not None and not _should_rerun(
+            existing, force=force, recent_receipt_no=recent_receipt_no
+        ):
                 return existing
 
         try:
@@ -480,7 +600,15 @@ async def analyze(corp: DartCorp, *, force: bool = False) -> DartAnalysis:
             # 여기까지는 돈이 들지 않았다. 실패를 남기되 다음 요청에서 다시 시도된다.
             return _save(_failed_row(corp, candidates[0], str(exc)))
 
-        report = _Report(corp=corp, disclosure=disclosure, sections=sections)
+        # 최신 분·반기보고서를 곁들인다. 못 읽어도 분석은 그대로 진행된다.
+        recent_sections = await _fetch_recent_sections(corp, recent_meta)
+        report = _Report(
+            corp=corp,
+            disclosure=disclosure,
+            sections=sections,
+            recent=recent_meta if recent_sections else None,
+            recent_sections=recent_sections,
+        )
         client = _client()
         try:
             content, used, in_tok, out_tok = await _call_model(client, report)
@@ -510,6 +638,9 @@ async def analyze(corp: DartCorp, *, force: bool = False) -> DartAnalysis:
             source_url=disclosure.viewer_url,
             content_json=content.model_dump_json(),
             sections=",".join(used.found),
+            recent_receipt_no=report.recent.receipt_no if report.recent else "",
+            recent_report_name=report.recent.report_name if report.recent else "",
+            recent_received_date=report.recent.received_date if report.recent else "",
             truncated=",".join(used.truncated),
             input_tokens=in_tok,
             output_tokens=out_tok,
@@ -552,12 +683,19 @@ async def prepare_batch(corp: DartCorp) -> object | None:
         return None
 
     existing = _find(candidates[0].receipt_no)
-    if existing is not None and not _should_rerun(existing, force=False):
+    recent_meta = await _safe_recent_periodic(corp, candidates[0])
+    recent_receipt_no = recent_meta.receipt_no if recent_meta else ""
+
+    if existing is not None and not _should_rerun(
+        existing, force=False, recent_receipt_no=recent_receipt_no
+    ):
         return None
 
     async with llm_budget.call_lock:
         existing = _find(candidates[0].receipt_no)
-        if existing is not None and not _should_rerun(existing, force=False):
+        if existing is not None and not _should_rerun(
+            existing, force=False, recent_receipt_no=recent_receipt_no
+        ):
             return None
 
         try:
@@ -571,7 +709,15 @@ async def prepare_batch(corp: DartCorp) -> object | None:
             _save(_failed_row(corp, candidates[0], str(exc)))
             return None
 
-        report = _Report(corp=corp, disclosure=disclosure, sections=sections)
+        # 최신 분·반기보고서를 곁들인다. 못 읽어도 분석은 그대로 진행된다.
+        recent_sections = await _fetch_recent_sections(corp, recent_meta)
+        report = _Report(
+            corp=corp,
+            disclosure=disclosure,
+            sections=sections,
+            recent=recent_meta if recent_sections else None,
+            recent_sections=recent_sections,
+        )
         client = _client()
         try:
             prompt, used, in_tok = await _fit_prompt(client, report)
@@ -606,6 +752,9 @@ async def prepare_batch(corp: DartCorp) -> object | None:
                 source_url=disclosure.viewer_url,
                 content_json="",
                 sections=",".join(used.found),
+            recent_receipt_no=report.recent.receipt_no if report.recent else "",
+            recent_report_name=report.recent.report_name if report.recent else "",
+            recent_received_date=report.recent.received_date if report.recent else "",
                 truncated=",".join(used.truncated),
                 input_tokens=in_tok,
                 output_tokens=0,
