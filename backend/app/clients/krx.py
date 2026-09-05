@@ -21,6 +21,7 @@ KRX 정규장 **확정 종가**를 가져오는 통로다. 토스증권 API 에�
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -32,6 +33,8 @@ import httpx
 
 from app.clients.ratelimit import TokenBucket
 from app.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 BASE_URL = "https://apis.data.go.kr/1160100/service/GetStockSecuritiesInfoService"
 
@@ -225,6 +228,20 @@ class KrxClient:
 
         rows = await self._request("/getStockPriceInfo", params)
         quotes = [self._to_quote(row) for row in rows if row.get("srtnCd") == symbol]
+
+        # **요청한 창 밖의 행은 버린다** — 신선도 가드(`_only_for` 와 같은 이유).
+        # 포털이 조회 기간을 무시하고 오래된 구간을 돌려주면, 정렬해서 맨 앞을 집는
+        # 아래 코드가 **1년 전 종가를 "가장 최근 종가"로** 내놓는다. 비어 있지 않다는
+        # 것만으로는 그것을 걸러낼 수 없다.
+        window_begin = begin.isoformat() if begin else None
+        window_end = end.isoformat() if end else None
+        quotes = [
+            q
+            for q in quotes
+            if (window_begin is None or q.trade_date >= window_begin)
+            and (window_end is None or q.trade_date <= window_end)
+        ]
+
         quotes.sort(key=lambda q: q.trade_date, reverse=True)
         return quotes[:limit]
 
@@ -266,7 +283,44 @@ class KrxClient:
             if page > 20:  # 하루 2만 종목은 있을 수 없다. 무한 루프 방지용 안전장치.
                 raise KrxError(f"{day} 조회가 페이지 한도를 넘겼습니다. 응답이 이상합니다.")
 
-        return [self._to_quote(row) for row in collected]
+        return [self._to_quote(row) for row in self._only_for(collected, day)]
+
+    @staticmethod
+    def _only_for(rows: list[dict[str, str]], day: date) -> list[dict[str, str]]:
+        """요청한 날짜의 행만 남긴다 — **신선도 가드**.
+
+        비어 있는지만 보는 검사는 **비어 있지 않은 틀린 값**을 못 잡는다. 응답에 행이 있고
+        종가 필드도 차 있으면 지금까지는 그대로 저장했는데, 그 행이 우리가 요청한 날짜의
+        것인지는 아무도 확인하지 않았다. 포털이 `basDt` 를 무시하고 다른 날짜를 돌려주면:
+
+        - 행은 자기 날짜로 저장된다(데이터 자체는 맞다). 그런데
+        - 적재 보고는 "요청한 그날 N 행을 받았다"고 **거짓을 말하고**,
+        - `stored_dates` 는 그날이 여전히 비어 있다고 보므로 **매일 같은 날을 다시 받는다**.
+          일일 한도 10,000 건을 조용히 태우는 길이다.
+
+        그래서 문 앞에서 막는다. 한 줄도 안 맞으면 값을 지어내지 않고 **이유를 말하며
+        멈춘다**(`scheduler` 가 실패로 기록하고 헬스체크가 알린다). 일부만 섞여 있으면
+        맞는 것만 남기고 경고를 남긴다 — 하루치가 통째로 날아가는 것이 더 나쁘다.
+
+        휴장일(응답이 빈 목록)은 여기서 걸리지 않는다. 남길 것도 버릴 것도 없기 때문이다.
+        """
+        wanted = day.strftime("%Y%m%d")
+        matched = [r for r in rows if (r.get("basDt") or "").strip() == wanted]
+        if len(matched) == len(rows):
+            return matched
+
+        seen = sorted({(r.get("basDt") or "").strip() or "(빈 값)" for r in rows})[:5]
+        if not matched:
+            raise KrxError(
+                f"{day} 를 요청했는데 응답에 그날 자료가 한 줄도 없습니다"
+                f"(받은 기준일자: {', '.join(seen)}).\n"
+                "  포털이 요청한 날짜를 무시하고 있습니다. 저장하지 않고 멈춥니다."
+            )
+        logger.warning(
+            "%s 응답에 다른 날짜가 섞여 있어 %d/%d 행만 남깁니다(받은 기준일자: %s)",
+            day, len(matched), len(rows), ", ".join(seen),
+        )
+        return matched
 
     @staticmethod
     def _to_quote(row: dict[str, str]) -> DailyQuote:
