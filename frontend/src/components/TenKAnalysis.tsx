@@ -3,6 +3,8 @@ import { fetchUsAnalysis, runUsAnalysis } from '../lib/api'
 import type { UsAnalysis } from '../lib/api'
 import { Card } from './ui/Card'
 import { DecoderCard } from './analysis/DecoderCard'
+import { FullScreenCard } from './analysis/FullScreenCard'
+import { useRoute } from '../lib/useRoute'
 import { Skeleton } from './ui/Skeleton'
 
 // 10-K 서술 분석 블록.
@@ -20,11 +22,13 @@ import { Skeleton } from './ui/Skeleton'
 
 type Props = {
   ticker: string
+  /** 크게 보기 링크의 주소. 전체 화면 안에서 다시 그릴 때는 주지 않는다. */
+  expandHref?: string
 }
 
 const RUN_HINT = '10-K 본문을 읽어야 해서 30초~2분 걸립니다.'
 
-export function TenKAnalysis({ ticker }: Props) {
+export function TenKAnalysis({ ticker, expandHref }: Props) {
   const [analysis, setAnalysis] = useState<UsAnalysis | null>(null)
   const [loading, setLoading] = useState(true)
   const [running, setRunning] = useState(false)
@@ -33,6 +37,11 @@ export function TenKAnalysis({ ticker }: Props) {
 
   // 종목을 바꿨는데 이전 요청의 응답이 뒤늦게 도착해 덮어쓰는 것을 막는다.
   const currentTicker = useRef(ticker)
+
+  // 카드를 넓게 편 상태인지는 **주소가 들고 있다**. 여기서는 읽기만 한다.
+  const { route, setExpanded } = useRoute()
+  const expanded =
+    route.expanded && route.section === 'filings' && route.symbol === ticker.toUpperCase()
 
   useEffect(() => {
     currentTicker.current = ticker
@@ -81,9 +90,21 @@ export function TenKAnalysis({ ticker }: Props) {
       hint="사업 · 위험요인 · 경영진 논의"
       bodyClassName=""
       meta={
-        analysis?.status === 'ok' ? (
-          <span className="tabular">FY{analysis.fiscal_year}</span>
-        ) : undefined
+        <span className="flex items-center gap-2">
+          {/* 크게 보기. 상세 패널은 550px 이라 읽어야 하는 글에는 좁다.
+              <a> 로 둔 이유: 오른쪽 눌러 새 탭으로 열 수 있어야 한다. */}
+          {expandHref && analysis?.status === 'ok' && (
+            <a
+              href={expandHref}
+              className="rounded px-1 py-0.5 text-[11px] text-neutral-500 underline decoration-neutral-700 underline-offset-2 transition-colors hover:text-neutral-300"
+            >
+              크게 보기
+            </a>
+          )}
+          {analysis?.status === 'ok' && (
+            <span className="tabular">FY{analysis.fiscal_year}</span>
+          )}
+        </span>
       }
     >
 
@@ -166,6 +187,17 @@ export function TenKAnalysis({ ticker }: Props) {
           <AnalysisBody analysis={analysis} />
         )}
       </div>
+
+      {/* 넓게 편 화면. 같은 `analysis` 를 다시 그리므로 새로 받지 않는다. */}
+      {expanded && analysis?.status === 'ok' && (
+        <FullScreenCard
+          title={ticker}
+          subtitle={`10-K 기업 해독 카드 · FY${analysis.fiscal_year}`}
+          onClose={() => setExpanded(false)}
+        >
+          <AnalysisBody analysis={analysis} />
+        </FullScreenCard>
+      )}
     </Card>
   )
 }

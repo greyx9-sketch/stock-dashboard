@@ -237,7 +237,9 @@ export function UsDetailPanel({ symbol, listItem, live, market, section, onSecti
         {section === 'filings' && (
           <>
             {/* 10-K 를 내는 종목에만 붙인다. ETF·DR 은 애초에 분석할 문서가 없다. */}
-            {hasSecFilings && <TenKAnalysis ticker={symbol} />}
+            {hasSecFilings && (
+              <TenKAnalysis ticker={symbol} expandHref={`#/us/${symbol}/filings/card`} />
+            )}
 
             <Card title="공시" hint="10-K 연차 · 10-Q 분기 · 8-K 수시" bodyClassName="">
               {filings.length > 0 ? (

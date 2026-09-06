@@ -236,7 +236,7 @@ export function StockDetailPanel({ symbol, name, live, market, section, onSectio
         {section === 'filings' && (
           <>
             {/* 미국 화면과 같은 순서 — 분석이 먼저, 원문 목록이 뒤. */}
-            <ReportAnalysis symbol={symbol} />
+            <ReportAnalysis symbol={symbol} expandHref={`#/kr/${symbol}/filings/card`} />
 
             <DisclosureList symbol={symbol} />
           </>

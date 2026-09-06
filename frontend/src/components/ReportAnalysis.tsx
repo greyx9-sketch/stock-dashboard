@@ -3,6 +3,8 @@ import { fetchKrAnalysis, runKrAnalysis } from '../lib/api'
 import type { KrAnalysis } from '../lib/api'
 import { Card } from './ui/Card'
 import { DecoderCard } from './analysis/DecoderCard'
+import { FullScreenCard } from './analysis/FullScreenCard'
+import { useRoute } from '../lib/useRoute'
 import { Skeleton } from './ui/Skeleton'
 
 // 국내 사업보고서 서술 분석 블록. 미국 쪽 TenKAnalysis 와 짝이다.
@@ -15,9 +17,11 @@ import { Skeleton } from './ui/Skeleton'
 
 type Props = {
   symbol: string
+  /** 크게 보기 링크의 주소. 전체 화면 안에서 다시 그릴 때는 주지 않는다. */
+  expandHref?: string
 }
 
-export function ReportAnalysis({ symbol }: Props) {
+export function ReportAnalysis({ symbol, expandHref }: Props) {
   const [analysis, setAnalysis] = useState<KrAnalysis | null>(null)
   const [loading, setLoading] = useState(true)
   const [running, setRunning] = useState(false)
@@ -26,6 +30,11 @@ export function ReportAnalysis({ symbol }: Props) {
 
   // 종목을 바꿨는데 이전 요청의 응답이 뒤늦게 도착해 덮어쓰는 것을 막는다.
   const current = useRef(symbol)
+
+  // 카드를 넓게 편 상태인지는 **주소가 들고 있다**. 여기서는 읽기만 한다.
+  const { route, setExpanded } = useRoute()
+  const expanded =
+    route.expanded && route.section === 'filings' && route.symbol === symbol.toUpperCase()
 
   useEffect(() => {
     current.current = symbol
@@ -73,9 +82,21 @@ export function ReportAnalysis({ symbol }: Props) {
       hint="사업 · 위험 · 경영진단"
       bodyClassName=""
       meta={
-        analysis?.status === 'ok' && analysis.fiscal_year ? (
-          <span className="tabular">{analysis.fiscal_year}년</span>
-        ) : undefined
+        <span className="flex items-center gap-2">
+          {/* 크게 보기. 상세 패널은 550px 이라 읽어야 하는 글에는 좁다.
+              <a> 로 둔 이유: 오른쪽 눌러 새 탭으로 열 수 있어야 한다. */}
+          {expandHref && analysis?.status === 'ok' && (
+            <a
+              href={expandHref}
+              className="rounded px-1 py-0.5 text-[11px] text-neutral-500 underline decoration-neutral-700 underline-offset-2 transition-colors hover:text-neutral-300"
+            >
+              크게 보기
+            </a>
+          )}
+          {analysis?.status === 'ok' && analysis.fiscal_year && (
+            <span className="tabular">{analysis.fiscal_year} 회계연도</span>
+          )}
+        </span>
       }
     >
 
@@ -158,6 +179,17 @@ export function ReportAnalysis({ symbol }: Props) {
           <AnalysisBody analysis={analysis} />
         )}
       </div>
+
+      {/* 넓게 편 화면. 같은 `analysis` 를 다시 그리므로 새로 받지 않는다. */}
+      {expanded && analysis?.status === 'ok' && (
+        <FullScreenCard
+          title={analysis.corp_name ?? symbol}
+          subtitle={`사업보고서 기업 해독 카드 · ${analysis.fiscal_year} 회계연도`}
+          onClose={() => setExpanded(false)}
+        >
+          <AnalysisBody analysis={analysis} />
+        </FullScreenCard>
+      )}
     </Card>
   )
 }

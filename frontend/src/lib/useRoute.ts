@@ -9,7 +9,13 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 //   #/kr/005930           삼성전자 상세 (개요)
 //   #/kr/005930/finance   삼성전자 · 재무
 //   #/us/AAPL/filings     애플 · 공시·분석
+//   #/us/AAPL/filings/card  애플 · 기업 해독 카드를 전체 화면으로
 //   #/watch #/screen #/calendar
+//
+// **카드 전체 화면도 주소에 담는다.** 오른쪽 상세 패널은 550px 이라 해독 카드의
+// 문장이 너무 좁게 접힌다. 넓게 펴서 보는 화면을 따로 두되, 그것을 화면 상태가 아니라
+// 주소로 들고 있게 했다 — 그래야 링크를 보낼 수 있고, 새 탭으로 열 수 있고,
+// 뒤로가기로 닫힌다. 이 앱이 처음부터 지켜 온 방식이다.
 //
 // **해시(#)를 쓰는 이유**: 해시 뒤는 서버로 가지 않는다. 그래서 배포 서버(Caddy)에
 // "어떤 주소로 들어와도 index.html 을 주라"는 설정을 따로 넣지 않아도 새로고침이 된다.
@@ -32,9 +38,16 @@ export type Route = {
   tab: Tab
   symbol: string | null
   section: Section
+  /** 해독 카드를 전체 화면으로 펴 놓았는가. `공시·분석` 섹션에서만 뜻이 있다. */
+  expanded: boolean
 }
 
-const DEFAULT_ROUTE: Route = { tab: 'kr', symbol: null, section: 'overview' }
+const DEFAULT_ROUTE: Route = {
+  tab: 'kr',
+  symbol: null,
+  section: 'overview',
+  expanded: false,
+}
 
 // 국내는 6자리 숫자, 미국은 알파벳 티커(BRK.B 처럼 점이 섞이기도 한다).
 // 주소창에 아무 글자나 쳐 넣어도 화면이 이상해지지 않게 여기서 한 번 거른다.
@@ -50,7 +63,11 @@ export function parseHash(hash: string): Route {
     ? (parts[2] as Section)
     : DEFAULT_ROUTE.section
 
-  return { tab, symbol, section }
+  // 전체 화면은 `공시·분석` 에서만 뜻이 있다. 다른 섹션에 붙은 /card 는 무시한다 —
+  // 주소창에 아무 글자나 쳐 넣어도 화면이 이상해지지 않아야 한다.
+  const expanded = section === 'filings' && parts[3] === 'card'
+
+  return { tab, symbol, section, expanded }
 }
 
 export function formatHash(route: Route): string {
@@ -59,9 +76,17 @@ export function formatHash(route: Route): string {
     parts.push(route.symbol)
     // 개요는 기본값이라 주소에 적지 않는다. #/kr/005930 이 #/kr/005930/overview 보다 읽기 좋다.
     if (route.section !== 'overview') parts.push(route.section)
+    // 전체 화면은 섹션 뒤에 붙는다. section 이 filings 일 때만 참이므로
+    // 위에서 섹션이 반드시 적혀 있다 — `#/kr/005930/filings/card`.
+    if (route.expanded) parts.push('card')
   }
   return `#/${parts.join('/')}`
 }
+
+// `useRoute` 를 두 곳 이상에서 쓰면 서로 어긋날 수 있다. pushState·replaceState 는
+// hashchange 를 일으키지 않아서, 한쪽이 주소를 바꿔도 다른 쪽은 모른 채 예전 값을 들고
+// 있게 된다. 주소를 바꿀 때 이 신호를 같이 쏘아 모두가 함께 따라오게 한다.
+const ROUTE_EVENT = 'app:route-change'
 
 export function useRoute() {
   const [route, setRoute] = useState<Route>(() => parseHash(window.location.hash))
@@ -77,9 +102,11 @@ export function useRoute() {
     const sync = () => setRoute(parseHash(window.location.hash))
     window.addEventListener('popstate', sync)
     window.addEventListener('hashchange', sync)
+    window.addEventListener(ROUTE_EVENT, sync)
     return () => {
       window.removeEventListener('popstate', sync)
       window.removeEventListener('hashchange', sync)
+      window.removeEventListener(ROUTE_EVENT, sync)
     }
   }, [])
 
@@ -97,11 +124,14 @@ export function useRoute() {
     }
     // pushState·replaceState 는 hashchange 를 일으키지 않는다. 상태는 직접 맞춰야 한다.
     setRoute(next)
+    // 다른 곳의 useRoute 들에게도 알린다. 이것이 없으면 카드가 "펼쳐진 상태"인 줄
+    // 모른 채 남는다.
+    window.dispatchEvent(new Event(ROUTE_EVENT))
   }, [])
 
   // 탭을 옮기면 종목을 놓는다. 국내 종목 코드를 들고 미국 탭으로 건너가면 안 되기 때문이다.
   const setTab = useCallback(
-    (tab: Tab) => go({ tab, symbol: null, section: 'overview' }, 'push'),
+    (tab: Tab) => go({ tab, symbol: null, section: 'overview', expanded: false }, 'push'),
     [go],
   )
 
@@ -112,10 +142,17 @@ export function useRoute() {
     [go],
   )
 
+  // 섹션을 바꾸면 전체 화면은 닫는다. 재무를 보러 가는데 카드가 덮고 있으면 안 된다.
   const setSection = useCallback(
-    (section: Section) => go({ ...latest.current, section }, 'push'),
+    (section: Section) => go({ ...latest.current, section, expanded: false }, 'push'),
     [go],
   )
 
-  return { route, setTab, setSymbol, setSection }
+  // 펴고 접는 것은 뒤로가기 지점을 남긴다 — 닫는 가장 자연스러운 동작이 뒤로가기다.
+  const setExpanded = useCallback(
+    (expanded: boolean) => go({ ...latest.current, expanded }, 'push'),
+    [go],
+  )
+
+  return { route, setTab, setSymbol, setSection, setExpanded }
 }
