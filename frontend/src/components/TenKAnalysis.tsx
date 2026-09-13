@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { fetchUsAnalysis, runUsAnalysis } from '../lib/api'
-import type { UsAnalysis } from '../lib/api'
+import { fetchUsAnalysis, fetchUsFinancials, runUsAnalysis } from '../lib/api'
+import type { UsAnalysis, UsFinancialYear } from '../lib/api'
+import { formatUsd } from '../lib/format'
+import { PerformanceChart } from './analysis/PerformanceChart'
+import type { PerformancePoint } from './analysis/PerformanceChart'
 import { Card } from './ui/Card'
 import { DecoderCard } from './analysis/DecoderCard'
 import { FullScreenCard } from './analysis/FullScreenCard'
@@ -202,6 +205,38 @@ export function TenKAnalysis({ ticker, expandHref }: Props) {
   )
 }
 
+/* 보고서 안의 실적 그래프에 쓸 재무. **넓게 펼 때만 받는다.**
+ *
+ * 패널에서는 안 쓰는 자료라 미리 받으면 종목을 넘길 때마다 헛호출이 된다. 넓게 편
+ * 화면은 사용자가 일부러 연 자리이고, 그때는 한 번 더 부르는 값이 있다.
+ *
+ * 실패해도 조용히 넘어간다 — 그래프는 보고서에 딸린 그림이라, 재무를 못 받았다고
+ * 해석까지 막으면 안 된다. */
+function usePerformance(key: string, enabled: boolean): PerformancePoint[] {
+  const [years, setYears] = useState<UsFinancialYear[]>([])
+
+  useEffect(() => {
+    if (!enabled) return
+    let cancelled = false
+    void fetchUsFinancials(key)
+      .then((result) => !cancelled && setYears(result.years))
+      .catch(() => !cancelled && setYears([]))
+    return () => {
+      cancelled = true
+    }
+  }, [key, enabled])
+
+  // 오래된 해가 왼쪽에 오게 세운다. 서버는 최신순으로 준다.
+  return [...years]
+    .sort((a, b) => a.fiscal_year - b.fiscal_year)
+    .map((year) => ({
+      label: `FY${year.fiscal_year}`,
+      revenue: year.revenue,
+      operatingIncome: year.operating_income,
+      operatingMargin: year.operating_margin,
+    }))
+}
+
 function AnalysisBody({
   analysis,
   wide = false,
@@ -210,6 +245,7 @@ function AnalysisBody({
   /** 넓게 편 화면인가. 도식은 가로로 읽는 그림이라 여기서만 그린다. */
   wide?: boolean
 }) {
+  const performance = usePerformance(analysis.ticker, wide)
   const realRisks = analysis.key_risks.filter((r) => !r.is_boilerplate)
   const boilerplate = analysis.key_risks.filter((r) => r.is_boilerplate)
 
@@ -221,6 +257,11 @@ function AnalysisBody({
       wide={wide}
       companyName={analysis.ticker}
       competitors={analysis.competitors}
+      performance={
+        performance.length > 0 ? (
+          <PerformanceChart points={performance} formatAmount={formatUsd} />
+        ) : undefined
+      }
       segments={analysis.segments}
       realRisks={realRisks}
       boilerplateRisks={boilerplate.map((r) => r.title)}

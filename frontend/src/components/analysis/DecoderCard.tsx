@@ -65,6 +65,9 @@ type Props = {
   companyName?: string | null
   /** 보고서가 이름을 댄 경쟁사. 없으면 빈 목록. */
   competitors: string[]
+  /** 실적 추이 그래프. 넓은 화면에서만 그려진다. 재무는 이 카드가 받지 않고
+   *  부르는 쪽이 만들어 넘긴다 — 국내와 미국이 출처도 단위도 다르기 때문이다. */
+  performance?: ReactNode
   segments: AnalysisSegment[]
   /** 이 회사에 특유한 위험. 앞의 셋을 크게 보여주고 나머지는 접는다. */
   realRisks: DecoderRisk[]
@@ -96,6 +99,7 @@ export function DecoderCard({
   wide = false,
   companyName,
   competitors,
+  performance,
   segments,
   realRisks,
   boilerplateRisks,
@@ -176,6 +180,14 @@ export function DecoderCard({
               </div>
             ))}
           </div>
+        </Section>
+      )}
+
+      {/* 사업을 본 다음 실적, 그다음 위험. 보고서를 읽는 순서다 —
+          무엇을 파는지 모르고 매출 그래프를 보면 아무 뜻도 없다. */}
+      {wide && performance && (
+        <Section n={next()} title="실적이 어땠나" note="모양을 보는 그림 — 값은 재무 탭에">
+          {performance}
         </Section>
       )}
 

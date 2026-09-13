@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { fetchKrAnalysis, runKrAnalysis } from '../lib/api'
-import type { KrAnalysis } from '../lib/api'
+import { fetchFinancials, fetchKrAnalysis, runKrAnalysis } from '../lib/api'
+import type { FinancialYear, KrAnalysis } from '../lib/api'
+import { formatBigWon } from '../lib/format'
+import { PerformanceChart } from './analysis/PerformanceChart'
+import type { PerformancePoint } from './analysis/PerformanceChart'
 import { Card } from './ui/Card'
 import { DecoderCard } from './analysis/DecoderCard'
 import { FullScreenCard } from './analysis/FullScreenCard'
@@ -194,6 +197,38 @@ export function ReportAnalysis({ symbol, expandHref }: Props) {
   )
 }
 
+/* 보고서 안의 실적 그래프에 쓸 재무. **넓게 펼 때만 받는다.**
+ *
+ * 패널에서는 안 쓰는 자료라 미리 받으면 종목을 넘길 때마다 헛호출이 된다. 넓게 편
+ * 화면은 사용자가 일부러 연 자리이고, 그때는 한 번 더 부르는 값이 있다.
+ *
+ * 실패해도 조용히 넘어간다 — 그래프는 보고서에 딸린 그림이라, 재무를 못 받았다고
+ * 해석까지 막으면 안 된다. */
+function usePerformance(key: string, enabled: boolean): PerformancePoint[] {
+  const [years, setYears] = useState<FinancialYear[]>([])
+
+  useEffect(() => {
+    if (!enabled) return
+    let cancelled = false
+    void fetchFinancials(key)
+      .then((result) => !cancelled && setYears(result.years))
+      .catch(() => !cancelled && setYears([]))
+    return () => {
+      cancelled = true
+    }
+  }, [key, enabled])
+
+  // 오래된 해가 왼쪽에 오게 세운다. 서버는 최신순으로 준다.
+  return [...years]
+    .sort((a, b) => a.fiscal_year - b.fiscal_year)
+    .map((year) => ({
+      label: String(year.fiscal_year),
+      revenue: year.revenue,
+      operatingIncome: year.operating_income,
+      operatingMargin: year.operating_margin,
+    }))
+}
+
 function AnalysisBody({
   analysis,
   wide = false,
@@ -202,6 +237,8 @@ function AnalysisBody({
   /** 넓게 편 화면인가. 도식은 가로로 읽는 그림이라 여기서만 그린다. */
   wide?: boolean
 }) {
+  const performance = usePerformance(analysis.stock_code, wide)
+
   return (
     <DecoderCard
       oneLiner={analysis.one_liner}
@@ -210,6 +247,11 @@ function AnalysisBody({
       wide={wide}
       companyName={analysis.corp_name ?? analysis.stock_code}
       competitors={analysis.competitors}
+      performance={
+        performance.length > 0 ? (
+          <PerformanceChart points={performance} formatAmount={formatBigWon} />
+        ) : undefined
+      }
       segments={analysis.segments}
       /* 국내 프롬프트는 형식적 문구를 애초에 걸러 달라고 시키므로 전부 실질 위험이다.
          미국(10-K)은 모델이 is_boilerplate 로 갈라 주는 것과 다른 점. */
