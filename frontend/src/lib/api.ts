@@ -388,7 +388,36 @@ export function fetchUsFilings(ticker: string, count = 15) {
 // 조회(GET)는 저장된 것만 읽으므로 공짜다. 실행(POST)만 돈이 든다. 화면은 이 구분을
 // 그대로 따른다 — 상세를 열면 GET 만 나가고, POST 는 사용자가 버튼을 눌러야 나간다.
 
-export type UsRiskItem = {
+/** 돈을 내는 쪽 하나. 흐름도의 오른쪽 칸이 된다. */
+export type RevenueSource = {
+  /** 누가 돈을 내는가. 예: '통신사' */
+  who: string
+  /** 무엇에 대해 내는가. 예: '기지국 장비' */
+  pays_for: string
+}
+
+/** 돈이 어디서 들어와 어디로 나가는지. 세 칸짜리 흐름도의 재료다.
+ *
+ *  한 문장 요약(`one_liner`)으로는 상자를 자를 수 없어서 항목으로 따로 받는다.
+ *  보고서에 근거가 없는 칸은 빈 목록으로 온다 — 그때는 그 도식을 그리지 않는다. */
+export type MoneyFlow = {
+  /** 회사가 돈을 주고 사오거나 들이는 것 */
+  inputs: string[]
+  /** 그것을 무엇으로 바꿔 값을 붙이는가 */
+  engine: string
+  /** 누가 돈을 내는가 */
+  revenue_sources: RevenueSource[]
+}
+
+/** 위험 지도의 두 축. 서버가 정해진 목록에서만 고른다 — 자유 문자열이면 축이 안 선다. */
+export type RiskAxes = {
+  /** 위험의 성격. 지도의 가로축. 예: '공급망' */
+  category: string
+  /** 언제의 위험인가. 지도의 세로축. **심각도가 아니라 시점이다.** */
+  timing: string
+}
+
+export type UsRiskItem = RiskAxes & {
   title: string
   why_it_matters: string
   /** 모든 보고서에 붙는 형식적 위험이면 true */
@@ -418,7 +447,11 @@ export type UsAnalysis = {
   /** 이 회사가 뭘로 돈을 버는지 한 문장. 카드 맨 위에 크게 놓인다. */
   one_liner: string | null
   business_summary: string | null
+  /** 돈의 흐름도. 보고서가 밝히지 않으면 없다. */
+  money_flow: MoneyFlow | null
   segments: AnalysisSegment[]
+  /** 보고서가 이름을 댄 경쟁사. 업계 상식으로 보태지 않는다. */
+  competitors: string[]
   key_risks: UsRiskItem[]
   mdna_points: string[]
   moat_and_competition: string | null
@@ -517,7 +550,7 @@ export function fetchFlows(symbol: string, days = 5) {
 // 응답 모양이 미국과 조금 다르다. 국내 사업보고서에는 위험요인 전용 항목이 없어
 // 보고서 곳곳에서 찾아내야 하므로, 각 위험이 어디서 나왔는지 `source` 로 밝힌다.
 
-export type KrRiskItem = {
+export type KrRiskItem = RiskAxes & {
   title: string
   why_it_matters: string
   /** 보고서 어느 절에서 나온 내용인지 */
@@ -543,7 +576,11 @@ export type KrAnalysis = {
   /** 이 회사가 뭘로 돈을 버는지 한 문장. 카드 맨 위에 크게 놓인다. */
   one_liner: string | null
   business_summary: string | null
+  /** 돈의 흐름도. 보고서가 밝히지 않으면 없다. */
+  money_flow: MoneyFlow | null
   segments: AnalysisSegment[]
+  /** 보고서가 이름을 댄 경쟁사. 업계 상식으로 보태지 않는다. */
+  competitors: string[]
   key_risks: KrRiskItem[]
   mdna_points: string[]
   moat_and_competition: string | null

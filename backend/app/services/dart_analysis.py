@@ -41,6 +41,12 @@ from app.models.dart_analysis import (
 )
 from app.clock import today_kst
 from app.services import analysis_batch, llm_budget
+from app.services.analysis_schema import (
+    DIAGRAM_RULES,
+    MoneyFlow,
+    RiskCategory,
+    RiskTiming,
+)
 from app.services.dart_extract import (
     DartExtractError,
     ReportSections,
@@ -64,7 +70,13 @@ MODEL = "claude-sonnet-5"
 #     ("기업공시서식 작성기준에 따라 분ㆍ반기보고서에 기재하지 않습니다"라고 본문에
 #     적혀 있다). 실제로 삼성전자 반기보고서의 그 자리는 508자짜리 안내문뿐이었다.
 #     (미국은 정반대다 — 10-Q 에 사업 설명이 없어서 사업·위험을 연차에서 가져온다.)
-PROMPT_VERSION = 3
+#
+# v4: **도식으로 그릴 구조를 받는다**(2026-09-14). `money_flow`(사오는 것 → 값을 붙이는
+#     지점 → 돈을 내는 쪽) · `competitors` · 위험마다 `category`·`timing`.
+#     지금까지 카드는 글이었고, 그림으로 바꾸려니 **상자를 자를 자리가 없었다** —
+#     한 문장 요약은 한 문장이라 화살표로 잇지 못한다. 여전히 수치 필드는 없다.
+#     필드 설명과 규칙은 미국과 한 글자도 다르지 않게 `analysis_schema.py` 에 둔다.
+PROMPT_VERSION = 4
 
 MAX_OUTPUT_TOKENS = 16_000
 MAX_INPUT_TOKENS = 180_000
@@ -96,6 +108,10 @@ class RiskItem(BaseModel):
             "'투자자 보호사항 - 제재', '사업의 내용'"
         )
     )
+    category: RiskCategory = Field(description="위험의 성격. 위험 지도의 가로축")
+    timing: RiskTiming = Field(
+        description="언제의 위험인가. 위험 지도의 세로축. 심각도가 아니라 시점"
+    )
 
 
 class SegmentItem(BaseModel):
@@ -119,8 +135,16 @@ class ReportAnalysisContent(BaseModel):
     business_summary: str = Field(
         description="이 회사가 무엇을 팔아 돈을 버는지 3~5문장"
     )
+    # 설명을 달지 않는다 — 중첩 모델 필드의 `description` 은 스키마 변환에서 버려져
+    # 모델에 닿지 않는다(`analysis_batch._tighten` 주석 참고). 달아 두면 읽는 사람이
+    # 모델이 그것을 봤다고 오해한다. 이 필드의 지침은 `MoneyFlow` 자신의 필드 설명과
+    # 시스템 프롬프트(`DIAGRAM_RULES`)에 있다.
+    money_flow: MoneyFlow
     segments: list[SegmentItem] = Field(
         description="사업 부문. 부문 구분이 없으면 빈 목록"
+    )
+    competitors: list[str] = Field(
+        description="보고서가 이름을 댄 경쟁사. 업계 상식으로 보태지 않는다. 없으면 빈 목록"
     )
     key_risks: list[RiskItem] = Field(
         description=(
@@ -175,7 +199,7 @@ SYSTEM_PROMPT = """\
    - 나쁜 예: "글로벌 종합 IT 솔루션 기업으로 다각화된 사업 포트폴리오를 보유합니다."
 8. `open_questions` 에는 **이 보고서만으로 답이 안 나온 것**을 적으십시오. 답을 아는
    척하지 말고, 다음에 무엇을 더 봐야 하는지를 남기는 자리입니다. 물음표로 끝내십시오.
-"""
+""" + DIAGRAM_RULES
 
 
 # ---------------------------------------------------------------- 문서 찾기

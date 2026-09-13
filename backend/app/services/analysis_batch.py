@@ -63,6 +63,19 @@ def json_schema_for(model: type[BaseModel]) -> dict[str, Any]:
 
 def _tighten(node: Any) -> Any:
     if isinstance(node, dict):
+        # `$ref` 옆에 붙은 것은 전부 버린다. **SDK 가 그렇게 한다.**
+        #
+        # 중첩 모델 필드에 설명을 달면 Pydantic 은
+        # `{"$ref": "...", "description": "..."}` 를 내는데, SDK 의 변환은 `$ref` 만
+        # 남기고 나머지를 떨어뜨린다(JSON Schema 의 옛 규칙 — `$ref` 가 있으면 형제
+        # 키는 무시된다). 여기서 같이 떨어뜨리지 않으면 동기 경로와 배치 경로가 서로
+        # 다른 스키마를 보내게 된다. 2026-09-14 에 `money_flow` 를 넣으면서 실제로
+        # 갈렸고, 이 파일의 SDK 대조 테스트가 그것을 잡았다.
+        #
+        # 읽는 쪽에서 알아 둘 것: **중첩 모델 필드의 `description` 은 모델에 닿지 않는다.**
+        # 설명이 필요하면 그 모델 자신의 필드 설명이나 시스템 프롬프트에 적어야 한다.
+        if "$ref" in node:
+            return {"$ref": _tighten(node["$ref"])}
         out = {key: _tighten(value) for key, value in node.items()}
         if out.get("type") == "object" and "properties" in out:
             # 모델에 없는 필드를 지어내지 못하게 하고, 모든 필드를 필수로 둔다.

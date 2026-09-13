@@ -38,6 +38,12 @@ from app.models.us_analysis import (
 )
 from app.models.us_company import SecCompany
 from app.services import analysis_batch, llm_budget
+from app.services.analysis_schema import (
+    DIAGRAM_RULES,
+    MoneyFlow,
+    RiskCategory,
+    RiskTiming,
+)
 from app.services.tenk_extract import (
     TenKExtractError,
     TenKSections,
@@ -68,7 +74,13 @@ MODEL = "claude-sonnet-5"
 #     볼 시점에 1년 가까이 묵어 있다. 사업(Item 1)과 위험(Item 1A)은 그대로 연차에서
 #     가져온다 — 10-Q 에는 사업 설명이 없고, 10-Q 의 위험은 변경분이라 단독으로 쓰면
 #     빠지는 것이 생긴다. 보내는 양은 거의 그대로다(Item 7 을 Item 2 로 바꿔 담을 뿐).
-PROMPT_VERSION = 4
+#
+# v5: **도식으로 그릴 구조를 받는다**(2026-09-14). `money_flow`(사오는 것 → 값을 붙이는
+#     지점 → 돈을 내는 쪽) · `competitors` · 위험마다 `category`·`timing`.
+#     지금까지 카드는 글이었고, 그림으로 바꾸려니 **상자를 자를 자리가 없었다** —
+#     한 문장 요약은 한 문장이라 화살표로 잇지 못한다. 여전히 수치 필드는 없다.
+#     필드 설명과 규칙은 국내와 한 글자도 다르지 않게 `analysis_schema.py` 에 둔다.
+PROMPT_VERSION = 5
 
 MAX_OUTPUT_TOKENS = 16_000
 # 섹션 글자 상한(18만 자 ≈ 4.5만 토큰) 때문에 실제로는 거의 걸리지 않는다.
@@ -102,6 +114,10 @@ class RiskItem(BaseModel):
             "이 회사에 특유한 위험이면 false"
         )
     )
+    category: RiskCategory = Field(description="위험의 성격. 위험 지도의 가로축")
+    timing: RiskTiming = Field(
+        description="언제의 위험인가. 위험 지도의 세로축. 심각도가 아니라 시점"
+    )
 
 
 class SegmentItem(BaseModel):
@@ -128,8 +144,16 @@ class TenKAnalysisContent(BaseModel):
     business_summary: str = Field(
         description="이 회사가 무엇을 파는지, 돈이 어디서 나오는지 3~5문장"
     )
+    # 설명을 달지 않는다 — 중첩 모델 필드의 `description` 은 스키마 변환에서 버려져
+    # 모델에 닿지 않는다(`analysis_batch._tighten` 주석 참고). 달아 두면 읽는 사람이
+    # 모델이 그것을 봤다고 오해한다. 이 필드의 지침은 `MoneyFlow` 자신의 필드 설명과
+    # 시스템 프롬프트(`DIAGRAM_RULES`)에 있다.
+    money_flow: MoneyFlow
     segments: list[SegmentItem] = Field(
         description="사업 부문. 보고서에 부문 구분이 없으면 빈 목록"
+    )
+    competitors: list[str] = Field(
+        description="보고서가 이름을 댄 경쟁사. 업계 상식으로 보태지 않는다. 없으면 빈 목록"
     )
     key_risks: list[RiskItem] = Field(
         description="위험요인 중 중요한 순으로 최대 6건. 형식적 문구만 있으면 그렇게 표시"
@@ -181,7 +205,7 @@ SYSTEM_PROMPT = """\
    - 나쁜 예: "종합 엔터테인먼트 플랫폼 기업으로 다각화된 사업 포트폴리오를 보유합니다."
 8. `open_questions` 에는 **이 보고서만으로 답이 안 나온 것**을 적으십시오. 답을 아는
    척하지 말고, 다음에 무엇을 더 봐야 하는지를 남기는 자리입니다. 물음표로 끝내십시오.
-"""
+""" + DIAGRAM_RULES
 
 
 # ---------------------------------------------------------------- 프롬프트 조립

@@ -1,6 +1,9 @@
 import { useState } from 'react'
 import type { ReactNode } from 'react'
-import type { AnalysisSegment } from '../../lib/api'
+import type { AnalysisSegment, MoneyFlow } from '../../lib/api'
+import { MindMap } from './MindMap'
+import { MoneyFlowDiagram, hasMoneyFlow } from './MoneyFlowDiagram'
+import { RiskMap } from './RiskMap'
 
 /* 기업 해독 카드 — 서술 분석 결과를 **읽히는 한 장**으로 그린다.
  *
@@ -19,11 +22,21 @@ import type { AnalysisSegment } from '../../lib/api'
  *      만든다. 오늘은 사업, 내일은 위험이 먼저 나오면 그건 그냥 글이다.
  *   3. **끝에 "아직 모르는 것"을 남긴다.** 답을 아는 척하지 않는 자리.
  *
- * ── 가져오지 않은 것 ──────────────────────────────────────────────────
- * 원본 카드에는 부문별 매출·영업이익 표와 막대그래프가 있다. **우리는 아직 그 숫자가
- * 없다.** 부문별 실적은 XBRL 의 segment 태그를 따로 파야 나오고, 우리 DB 에는 전사
- * 합계만 있다. 없는 숫자를 LLM 에게 물어 채우는 것은 절대 규칙 3 이 금지한다.
- * 그래서 부문은 **이름과 설명만** 카드로 그린다. 숫자는 옆의 `재무` 탭이 맡는다.
+ * ── 넓게 펴면 도식이 붙는다 (2026-09-14) ──────────────────────────────
+ * 사용자가 "그래프나 마인드맵으로 바꿔 달라"고 했다. 글을 그림으로 바꾸려니 **상자를
+ * 자를 자리가 없었다** — 한 문장 요약은 한 문장이라 화살표로 잇지 못한다. 그래서
+ * 프롬프트에 도식용 **구조**를 더 받고(`money_flow`·위험의 `category`·`timing`,
+ * 여전히 수치는 없다) 그것으로 마인드맵·돈의 흐름도·위험 지도를 그린다.
+ *
+ * **좁은 패널(550px)에서는 그리지 않는다**(`wide`). 도식은 가로로 읽는 그림이라
+ * 세 칸이 한 줄에 들어가야 뜻이 산다. 550px 에 넣으면 세로로 쌓여 그냥 목록이 되고,
+ * 같은 내용을 두 번 읽히게 할 뿐이다. 넓게 편 화면이 보고서, 패널은 요약이다.
+ *
+ * ── 아직 가져오지 못한 것 ─────────────────────────────────────────────
+ * 원본 카드에는 부문별 매출·영업이익 **막대그래프**가 있다. 그 숫자가 우리에게 없다 —
+ * 부문별 실적은 사업보고서 원문의 표를 직접 파싱해야 나오고, 우리 DB 에는 전사 합계만
+ * 있다. 없는 숫자를 LLM 에게 물어 채우는 것은 절대 규칙 3 이 금지한다. 그래서 부문은
+ * 아직 **이름과 설명만** 그린다.
  *
  * ── 색을 쓰지 않는 이유 ───────────────────────────────────────────────
  * 원본은 히어로 패널을 파랗게 칠한다. 이 화면에서는 안 된다 — 파랑은 하락, 빨강은
@@ -35,11 +48,23 @@ import type { AnalysisSegment } from '../../lib/api'
 export type DecoderRisk = {
   title: string
   why_it_matters: string
+  /** 위험 지도의 가로 꼬리표. 옛 판에는 없어서 없을 수 있다. */
+  category?: string
+  /** 위험 지도의 세로 띠. 심각도가 아니라 시점이다. */
+  timing?: string
 }
 
 type Props = {
   oneLiner: string | null
   businessSummary: string | null
+  /** 돈의 흐름도의 재료. 세 칸이 다 차 있을 때만 그려진다. */
+  moneyFlow: MoneyFlow | null
+  /** 도식을 그릴 만큼 넓은 화면인가. 좁은 패널에서는 글만 그린다. */
+  wide?: boolean
+  /** 마인드맵 줄기에 놓을 회사 이름. `wide` 일 때만 쓰인다. */
+  companyName?: string | null
+  /** 보고서가 이름을 댄 경쟁사. 없으면 빈 목록. */
+  competitors: string[]
   segments: AnalysisSegment[]
   /** 이 회사에 특유한 위험. 앞의 셋을 크게 보여주고 나머지는 접는다. */
   realRisks: DecoderRisk[]
@@ -67,6 +92,10 @@ const FEATURED_RISKS = 3
 export function DecoderCard({
   oneLiner,
   businessSummary,
+  moneyFlow,
+  wide = false,
+  companyName,
+  competitors,
   segments,
   realRisks,
   boilerplateRisks,
@@ -92,9 +121,40 @@ export function DecoderCard({
 
       {oneLiner && <Hero text={oneLiner} />}
 
+      {/* 먼저 읽는 지도. 아래 구획들이 몇 개이고 무엇인지를 스크롤 전에 보여준다. */}
+      {wide && (
+        <MindMap
+          title={companyName ?? '이 회사'}
+          subtitle={oneLiner}
+          branches={[
+            { label: '사업 부문', note: '무엇을 파는가', leaves: segments.map((s) => s.name) },
+            {
+              label: '돈을 내는 쪽',
+              note: '누가 내는가',
+              leaves: moneyFlow?.revenue_sources.map((r) => r.who) ?? [],
+            },
+            {
+              label: '위험',
+              note: '이 회사에 특유한 것',
+              leaves: realRisks.map((r) => r.title),
+            },
+            { label: '경쟁사', note: '보고서가 이름을 댄 곳', leaves: competitors },
+            /* '아직 모르는 것'은 가지로 넣지 않는다. 질문은 문장이라 잎으로 자르면
+               뜻이 사라지고, 이 지도는 **아는 것의 목차**다. 질문은 보고서 끝자리에
+               온전한 문장으로 남는다. */
+          ]}
+        />
+      )}
+
       {businessSummary && (
         <Section n={next()} title="이 회사가 하는 일">
           <p className="leading-relaxed text-neutral-300">{businessSummary}</p>
+        </Section>
+      )}
+
+      {wide && hasMoneyFlow(moneyFlow) && (
+        <Section n={next()} title="돈의 흐름" note="사와서 → 값을 붙여 → 팔아서">
+          <MoneyFlowDiagram flow={moneyFlow} companyName={companyName} />
         </Section>
       )}
 
@@ -116,6 +176,20 @@ export function DecoderCard({
               </div>
             ))}
           </div>
+        </Section>
+      )}
+
+      {wide && realRisks.some((risk) => risk.timing) && (
+        <Section n={next()} title="위험 지도" note="어떤 성격의 위험이 언제 닥치는가">
+          <RiskMap
+            risks={realRisks
+              .filter((risk) => risk.timing)
+              .map((risk) => ({
+                title: risk.title,
+                category: risk.category || '기타',
+                timing: risk.timing as string,
+              }))}
+          />
         </Section>
       )}
 
@@ -167,9 +241,26 @@ export function DecoderCard({
         </Section>
       )}
 
-      {moat && (
+      {(moat || competitors.length > 0) && (
         <Section n={next()} title="경쟁 구도">
-          <p className="text-xs leading-relaxed text-neutral-400">{moat}</p>
+          {moat && <p className="text-xs leading-relaxed text-neutral-400">{moat}</p>}
+          {competitors.length > 0 && (
+            <div className="mt-2">
+              {/* 보고서가 **이름을 댄** 곳만이다. 업계 상식으로 보태면 어디까지가 공시
+                  내용인지가 흐려진다 — 이 카드의 값어치는 그 경계에 있다. */}
+              <div className="mb-1 text-[10px] text-neutral-600">보고서가 이름을 댄 경쟁사</div>
+              <div className="flex flex-wrap gap-1">
+                {competitors.map((name) => (
+                  <span
+                    key={name}
+                    className="rounded border border-neutral-800 bg-neutral-950/60 px-1.5 py-0.5 text-[11px] text-neutral-400"
+                  >
+                    {name}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
         </Section>
       )}
 

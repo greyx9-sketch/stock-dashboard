@@ -24,7 +24,7 @@ import pytest
 
 from app.models.base import get_session, init_db
 from app.models.us_analysis import STATUS_FAILED, STATUS_OK, STATUS_PENDING, SecAnalysis
-from app.services import analysis_batch, dart_analysis, llm_budget, tenk_analysis
+from app.services import analysis_batch, analysis_schema, dart_analysis, llm_budget, tenk_analysis
 
 
 # ---------------------------------------------------------------- 스키마
@@ -203,15 +203,25 @@ def test_applying_a_good_result_fills_the_row(_pending_row):
     content = tenk_analysis.TenKAnalysisContent(
         one_liner="전화기를 팔고, 그 전화기 안에서 앱·구독으로 계속 받는 회사입니다.",
         business_summary="아이폰을 판다.",
+        money_flow=analysis_schema.MoneyFlow(
+            inputs=["부품", "위탁 생산"],
+            engine="자기 운영체제를 얹어 판다",
+            revenue_sources=[
+                analysis_schema.RevenueSource(who="소비자", pays_for="기기·구독"),
+            ],
+        ),
         segments=[
             tenk_analysis.SegmentItem(name="기기", what="아이폰·맥·워치"),
             tenk_analysis.SegmentItem(name="서비스", what="앱스토어·구독"),
         ],
+        competitors=["Samsung"],
         key_risks=[
             tenk_analysis.RiskItem(
                 title="공급망 집중",
                 why_it_matters="한 지역에 생산이 몰려 있다.",
                 is_boilerplate=False,
+                category="공급망",
+                timing="이미 진행 중",
             )
         ],
         mdna_points=["서비스 매출이 늘었다고 설명"],
@@ -241,7 +251,9 @@ def test_applying_an_empty_result_marks_it_failed(_pending_row):
     empty = tenk_analysis.TenKAnalysisContent(
         one_liner="",
         business_summary="",
+        money_flow=analysis_schema.MoneyFlow(inputs=[], engine="", revenue_sources=[]),
         segments=[],
+        competitors=[],
         key_risks=[],
         mdna_points=[],
         moat_and_competition="",

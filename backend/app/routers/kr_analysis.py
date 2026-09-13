@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 
 from app.models.dart_analysis import STATUS_OK, STATUS_PENDING, DartAnalysis
 from app.services import dart_analysis, dart_corps
+from app.services.analysis_schema import MoneyFlow
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,10 @@ class RiskItemOut(BaseModel):
     title: str
     why_it_matters: str
     source: str = Field(description="보고서 어느 절에서 나온 내용인지")
+    # 위험 지도의 두 축. 옛 판(프롬프트 버전이 낮은 행)에는 없으므로 기본값을 준다 —
+    # 그런 행은 화면에 나오지 않지만, 여기서 터지면 원인을 찾기 어려운 500 이 된다.
+    category: str = Field(default="기타", description="위험의 성격. 지도의 가로축")
+    timing: str = Field(default="잠재적", description="언제의 위험인가. 지도의 세로축")
 
 
 class KrAnalysisOut(BaseModel):
@@ -69,6 +74,13 @@ class KrAnalysisOut(BaseModel):
         description="이 회사가 무엇으로 돈을 버는지 한 문장. 카드 맨 위에 크게 놓인다",
     )
     business_summary: str | None = None
+    money_flow: MoneyFlow | None = Field(
+        default=None,
+        description="돈이 어디서 들어와 어디로 나가는지. 화면이 흐름도로 그린다",
+    )
+    competitors: list[str] = Field(
+        default_factory=list, description="보고서가 이름을 댄 경쟁사"
+    )
     segments: list[SegmentOut] = Field(default_factory=list)
     key_risks: list[RiskItemOut] = Field(default_factory=list)
     mdna_points: list[str] = Field(default_factory=list)
@@ -120,7 +132,9 @@ def _to_out(stock_code: str, row: DartAnalysis | None) -> KrAnalysisOut:
         recent_received_date=row.recent_received_date or None,
         one_liner=content.get("one_liner"),
         business_summary=content.get("business_summary"),
+        money_flow=content.get("money_flow"),
         segments=content.get("segments", []),
+        competitors=content.get("competitors", []),
         key_risks=[RiskItemOut(**r) for r in content.get("key_risks", [])],
         mdna_points=content.get("mdna_points", []),
         moat_and_competition=content.get("moat_and_competition"),

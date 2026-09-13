@@ -187,18 +187,29 @@ export function ReportAnalysis({ symbol, expandHref }: Props) {
           subtitle={`사업보고서 기업 해독 카드 · ${analysis.fiscal_year} 회계연도`}
           onClose={() => setExpanded(false)}
         >
-          <AnalysisBody analysis={analysis} />
+          <AnalysisBody analysis={analysis} wide />
         </FullScreenCard>
       )}
     </Card>
   )
 }
 
-function AnalysisBody({ analysis }: { analysis: KrAnalysis }) {
+function AnalysisBody({
+  analysis,
+  wide = false,
+}: {
+  analysis: KrAnalysis
+  /** 넓게 편 화면인가. 도식은 가로로 읽는 그림이라 여기서만 그린다. */
+  wide?: boolean
+}) {
   return (
     <DecoderCard
       oneLiner={analysis.one_liner}
       businessSummary={analysis.business_summary}
+      moneyFlow={analysis.money_flow}
+      wide={wide}
+      companyName={analysis.corp_name ?? analysis.stock_code}
+      competitors={analysis.competitors}
       segments={analysis.segments}
       /* 국내 프롬프트는 형식적 문구를 애초에 걸러 달라고 시키므로 전부 실질 위험이다.
          미국(10-K)은 모델이 is_boilerplate 로 갈라 주는 것과 다른 점. */

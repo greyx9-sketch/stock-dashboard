@@ -195,14 +195,21 @@ export function TenKAnalysis({ ticker, expandHref }: Props) {
           subtitle={`10-K 기업 해독 카드 · FY${analysis.fiscal_year}`}
           onClose={() => setExpanded(false)}
         >
-          <AnalysisBody analysis={analysis} />
+          <AnalysisBody analysis={analysis} wide />
         </FullScreenCard>
       )}
     </Card>
   )
 }
 
-function AnalysisBody({ analysis }: { analysis: UsAnalysis }) {
+function AnalysisBody({
+  analysis,
+  wide = false,
+}: {
+  analysis: UsAnalysis
+  /** 넓게 편 화면인가. 도식은 가로로 읽는 그림이라 여기서만 그린다. */
+  wide?: boolean
+}) {
   const realRisks = analysis.key_risks.filter((r) => !r.is_boilerplate)
   const boilerplate = analysis.key_risks.filter((r) => r.is_boilerplate)
 
@@ -210,6 +217,10 @@ function AnalysisBody({ analysis }: { analysis: UsAnalysis }) {
     <DecoderCard
       oneLiner={analysis.one_liner}
       businessSummary={analysis.business_summary}
+      moneyFlow={analysis.money_flow}
+      wide={wide}
+      companyName={analysis.ticker}
+      competitors={analysis.competitors}
       segments={analysis.segments}
       realRisks={realRisks}
       boilerplateRisks={boilerplate.map((r) => r.title)}
