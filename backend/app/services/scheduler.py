@@ -165,33 +165,16 @@ class KrxScheduler:
             replace_existing=True,
         )
 
-        # 관심종목에 새 연차보고서가 올라왔는지 보고, 있으면 분석한다.
-        # **평일만 돈다** — 보고서는 영업일에 제출되고, 주말에 훑어 봐야 새 것이 없다.
-        self._scheduler.add_job(
-            self._auto_analysis,
-            CronTrigger(day_of_week="mon-fri", hour=AUTO_ANALYSIS_HOUR,
-                        minute=AUTO_ANALYSIS_MINUTE, timezone=KST),
-            id=AUTO_ANALYSIS_JOB_ID,
-            name="새 연차보고서 자동 분석",
-            misfire_grace_time=3600,
-            coalesce=True,
-            max_instances=1,
-            replace_existing=True,
-        )
-
-        # 배치로 맡긴 분석 결과를 주워 온다. 맡긴 것이 없으면 아무 일도 하지 않는다.
-        # 보고서는 주말에 안 나오지만 **제출한 배치는 주말을 넘어 끝날 수 있으므로**
-        # 이쪽은 날짜를 가리지 않고 돌린다.
-        self._scheduler.add_job(
-            self._collect_batches,
-            IntervalTrigger(minutes=BATCH_COLLECT_MINUTES),
-            id=BATCH_COLLECT_JOB_ID,
-            name="분석 배치 결과 수거",
-            misfire_grace_time=600,
-            coalesce=True,
-            max_instances=1,
-            replace_existing=True,
-        )
+        # 자동 분석과 배치 수거를 **등록하지 않는다** (2026-09-14).
+        #
+        # 화면의 공시·분석이 우리가 돈을 내고 부르던 LLM 분석에서 **AI 에게 넘길
+        # 지시서**로 바뀌었다(`services/research_prompt.py`). 아무도 보지 않는 결과를
+        # 만들려고 평일 아침마다 돈이 나가면 안 된다 — 이것이 이 프로젝트에서 **돈이
+        # 저절로 나가던 유일한 경로**였다.
+        #
+        # 일을 하는 코드(`auto_analysis.py`·`analysis_batch.py`)는 지우지 않았다.
+        # 이미 돈을 주고 받아 둔 결과 7건이 DB 에 남아 있고, 되돌리려면 이 블록만
+        # 되살리면 된다. 지금은 **부르는 곳이 없다**는 것이 중요하다.
 
         self._scheduler.start()
         logger.info("스케줄러 시작. 다음 정기 수집: %s", self.next_run_at)

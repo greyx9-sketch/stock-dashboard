@@ -7,7 +7,7 @@ import { DisclosureList } from './DisclosureList'
 import { FinancialSummary } from './FinancialSummary'
 import { ValuationBox } from './ValuationBox'
 import { PeerComparison } from './PeerComparison'
-import { ReportAnalysis } from './ReportAnalysis'
+import { ResearchPrompt } from './ResearchPrompt'
 import { SupplyDemand } from './SupplyDemand'
 import { StockNotes } from './StockNotes'
 import { WatchStar } from './WatchStar'
@@ -236,7 +236,7 @@ export function StockDetailPanel({ symbol, name, live, market, section, onSectio
         {section === 'filings' && (
           <>
             {/* 미국 화면과 같은 순서 — 분석이 먼저, 원문 목록이 뒤. */}
-            <ReportAnalysis symbol={symbol} expandHref={`#/kr/${symbol}/filings/card`} />
+            <ResearchPrompt symbol={symbol} market="KR" />
 
             <DisclosureList symbol={symbol} />
           </>

@@ -643,6 +643,51 @@ export function deleteNote(id: number) {
   return request<{ removed: boolean }>(`/api/notes/${id}`, { method: 'DELETE' })
 }
 
+// ── AI 리서치 지시서 ────────────────────────────────────────────────
+//
+// 공시·분석 자리가 이것으로 바뀌었다(2026-09-14). 우리가 직접 분석하지 않고,
+// **분석에 필요한 모든 것을 담은 지시서**를 만들어 사람이 claude.ai 에 붙여넣는다.
+//
+// 돈이 나가지 않는 경로다 — 서버가 DB 를 읽고 공시 목록을 받아 글자를 이어 붙일 뿐이다.
+// 다만 종목을 처음 열면 재무·공시를 받느라 몇 초 걸릴 수 있다.
+
+export type PromptPreset = {
+  id: string
+  label: string
+  /** 단추 아래 한 줄. 이걸 고르면 무엇을 시키는지 */
+  hint: string
+}
+
+export type ResearchPrompt = {
+  symbol: string
+  name: string
+  /** KR / US */
+  market: string
+  preset: string
+  /** 그대로 복사해 붙여넣을 글 */
+  text: string
+  /** 이 지시서에 담긴 것 */
+  included: string[]
+  /** 담지 못한 것. 조용히 비우지 않는다 */
+  missing: string[]
+}
+
+export function fetchPromptPresets() {
+  return get<PromptPreset[]>('/api/prompt-presets')
+}
+
+export function fetchKrPrompt(symbol: string, preset: string) {
+  return get<ResearchPrompt>(
+    `/api/stocks/${encodeURIComponent(symbol)}/prompt?preset=${encodeURIComponent(preset)}`,
+  )
+}
+
+export function fetchUsPrompt(ticker: string, preset: string) {
+  return get<ResearchPrompt>(
+    `/api/us/${encodeURIComponent(ticker)}/prompt?preset=${encodeURIComponent(preset)}`,
+  )
+}
+
 // ── 메모 회고 ───────────────────────────────────────────────────────
 //
 // 메모를 쓴 뒤 주가가 어떻게 됐는지. **목록과 따로 부른다** — `/api/notes` 는 DB 만

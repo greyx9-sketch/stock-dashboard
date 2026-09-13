@@ -16,7 +16,7 @@ import { SECTION_OPTIONS, type Section } from '../lib/useRoute'
 import { UsValuationBox } from './UsValuationBox'
 import { UsFinancialPeriod } from './UsFinancialPeriod'
 import { UsPeerComparison } from './UsPeerComparison'
-import { TenKAnalysis } from './TenKAnalysis'
+import { ResearchPrompt } from './ResearchPrompt'
 import { StockNotes } from './StockNotes'
 import { WatchStar } from './WatchStar'
 import {
@@ -238,7 +238,7 @@ export function UsDetailPanel({ symbol, listItem, live, market, section, onSecti
           <>
             {/* 10-K 를 내는 종목에만 붙인다. ETF·DR 은 애초에 분석할 문서가 없다. */}
             {hasSecFilings && (
-              <TenKAnalysis ticker={symbol} expandHref={`#/us/${symbol}/filings/card`} />
+              <ResearchPrompt symbol={symbol} market="US" />
             )}
 
             <Card title="공시" hint="10-K 연차 · 10-Q 분기 · 8-K 수시" bodyClassName="">

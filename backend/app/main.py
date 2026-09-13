@@ -23,6 +23,7 @@ from app.routers import (
     flows,
     health as health_router,
     kr_analysis,
+    prompts,
     macro,
     meta,
     notes,
@@ -90,6 +91,9 @@ app.add_middleware(
 # 먼저 잡으면 `/analysis` 가 종목 코드로 오인된다(미국 쪽과 같은 이유).
 app.include_router(events.router)
 app.include_router(screener.router)
+app.include_router(prompts.router)
+# 서술 분석 라우터는 남겨 둔다. 화면은 더 이상 부르지 않지만(2026-09-14 지시서로 교체),
+# 이미 돈을 주고 받아 둔 결과 7건이 DB 에 있고 되돌릴 수도 있어야 한다.
 app.include_router(kr_analysis.router)
 app.include_router(flows.router)
 app.include_router(stocks.router)
