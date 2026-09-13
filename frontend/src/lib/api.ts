@@ -606,6 +606,36 @@ export function deleteNote(id: number) {
   return request<{ removed: boolean }>(`/api/notes/${id}`, { method: 'DELETE' })
 }
 
+// ── 메모 회고 ───────────────────────────────────────────────────────
+//
+// 메모를 쓴 뒤 주가가 어떻게 됐는지. **목록과 따로 부른다** — `/api/notes` 는 DB 만
+// 읽어 즉시 답하지만 이쪽은 시세를 받아 온다. 합치면 토스가 느린 날 메모 본문까지
+// 늦게 뜨고, 토스가 막힌 날에는 메모가 통째로 빈다.
+
+export type NoteReturn = {
+  note_id: number
+  symbol: string
+  /** 기준 거래일. 메모를 쓴 날, 휴장이면 직전 거래일 */
+  base_date: string
+  base_close: string
+  /** 비교 대상 거래일 */
+  as_of: string
+  last_close: string
+  /** 그 사이 등락률 (%) */
+  change_rate: number
+  /** 두 거래일 사이의 달력 일수. 0 이면 아직 견줄 기간이 없다 */
+  days: number
+  /** 견준 지수 이름. 코스피 / 코스닥 / S&P500 */
+  index_label: string | null
+  index_rate: number | null
+}
+
+export function fetchNotePerformance(symbol: string, limit = 50) {
+  return get<{ items: NoteReturn[]; error: string | null }>(
+    `/api/notes/performance?symbol=${encodeURIComponent(symbol)}&limit=${limit}`,
+  )
+}
+
 // ── 가동 상태 ───────────────────────────────────────────────────────
 //
 // 앱이 스스로 판단한 상태다. `/health` 는 살아 있는지만 답하고, 이쪽은 무엇이 어떻게

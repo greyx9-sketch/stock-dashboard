@@ -1,6 +1,13 @@
 import { useEffect, useState } from 'react'
-import { createNote, deleteNote, fetchNotes, updateNote } from '../lib/api'
-import type { Note } from '../lib/api'
+import {
+  createNote,
+  deleteNote,
+  fetchNotePerformance,
+  fetchNotes,
+  updateNote,
+} from '../lib/api'
+import type { Note, NoteReturn } from '../lib/api'
+import { changeColor, formatRate } from '../lib/format'
 import { Card } from './ui/Card'
 import { Skeleton } from './ui/Skeleton'
 
@@ -14,6 +21,8 @@ import { Skeleton } from './ui/Skeleton'
 //   2. **언제 썼는지가 보여야 한다.** 판단의 시점이 메모의 값어치다. 고친 메모는 그 사실도 적는다.
 //   3. **실수로 지워지지 않아야 한다.** 지우기는 한 번 더 눌러야 실행된다
 //      (confirm 창은 쓰지 않는다 — 자동화 도구를 멈추게 하고, 흐름도 끊는다).
+//   4. **그 판단이 맞았는지가 보여야 한다.** 메모마다 그 뒤의 등락률과 같은 기간의 지수를
+//      붙인다. 기록이 쌓일수록 성적표가 된다.
 
 type Props = {
   symbol: string
@@ -23,6 +32,7 @@ const RECENT = 3
 
 export function StockNotes({ symbol }: Props) {
   const [notes, setNotes] = useState<Note[]>([])
+  const [retro, setRetro] = useState<Record<number, NoteReturn>>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(false)
@@ -42,6 +52,7 @@ export function StockNotes({ symbol }: Props) {
     setLoading(true)
     setError(null)
     setNotes([])
+    setRetro({})
     setDraft('')
     setTags('')
     setExpanded(false)
@@ -50,6 +61,19 @@ export function StockNotes({ symbol }: Props) {
       .then((r) => !cancelled && setNotes(r))
       .catch((err: Error) => !cancelled && setError(err.message))
       .finally(() => !cancelled && setLoading(false))
+
+    // 회고는 따로, 동시에 부른다. 시세를 받아 오는 경로라 목록보다 느리고, 이어 붙이면
+    // 메모 본문이 그만큼 늦게 뜬다.
+    //
+    // **메모를 쓰고 고칠 때는 다시 부르지 않는다.** 오늘 쓴 메모에는 견줄 기간이 없고
+    // (기준일과 비교일이 같다), 고치기는 작성 시각을 건드리지 않기 때문이다.
+    fetchNotePerformance(symbol)
+      .then(
+        (r) =>
+          !cancelled && setRetro(Object.fromEntries(r.items.map((i) => [i.note_id, i]))),
+      )
+      // 회고는 메모에 딸린 덧붙임이다. 못 받아도 메모 화면이 흔들려서는 안 된다.
+      .catch(() => !cancelled && setRetro({}))
 
     return () => {
       cancelled = true
@@ -122,7 +146,7 @@ export function StockNotes({ symbol }: Props) {
         {shown.length > 0 && (
           <ul className="divide-y divide-neutral-800/70 border-t border-neutral-800 pt-1">
             {shown.map((note) => (
-              <NoteRow key={note.id} note={note} onChanged={load} />
+              <NoteRow key={note.id} note={note} retro={retro[note.id]} onChanged={load} />
             ))}
           </ul>
         )}
@@ -140,7 +164,15 @@ export function StockNotes({ symbol }: Props) {
   )
 }
 
-function NoteRow({ note, onChanged }: { note: Note; onChanged: () => void }) {
+function NoteRow({
+  note,
+  retro,
+  onChanged,
+}: {
+  note: Note
+  retro?: NoteReturn
+  onChanged: () => void
+}) {
   const [editing, setEditing] = useState(false)
   const [body, setBody] = useState(note.body)
   const [tags, setTags] = useState(note.tags.join(', '))
@@ -211,6 +243,7 @@ function NoteRow({ note, onChanged }: { note: Note; onChanged: () => void }) {
       <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-neutral-600">
         <span className="tabular">{formatNoteTime(note.created_at)}</span>
         {note.edited && <span title={formatNoteTime(note.updated_at)}>수정됨</span>}
+        <NoteScore retro={retro} />
         {note.tags.map((tag) => (
           <span key={tag} className="rounded bg-neutral-800 px-1.5 py-0.5 text-neutral-400">
             #{tag}
@@ -231,6 +264,36 @@ function NoteRow({ note, onChanged }: { note: Note; onChanged: () => void }) {
         </span>
       </div>
     </li>
+  )
+}
+
+/**
+ * 메모를 쓴 뒤의 성적. `그 뒤 +18.42% (코스피 +3.10%)`
+ *
+ * **견줄 기간이 없으면 아무것도 그리지 않는다.** 오늘 쓴 메모는 기준일과 비교일이 같아
+ * 늘 +0.00% 인데, 그것을 보여주면 "아직 안 움직였다"가 아니라 "맞히지 못했다"로 읽힌다.
+ *
+ * 기준가와 비교가는 말풍선에 담는다. 회고의 값어치는 등락률 한 조각이고, 그 옆에 숫자를
+ * 더 늘어놓으면 정작 메모 본문이 밀린다. 다만 **무엇과 무엇을 뺀 값인지는 물어볼 수
+ * 있어야 한다** — 국내 확정 종가는 장중에 어제까지라 기준일이 오늘이 아닐 수 있다.
+ */
+function NoteScore({ retro }: { retro?: NoteReturn }) {
+  if (!retro || retro.days <= 0) return null
+
+  const span = `${retro.base_date} ${retro.base_close} → ${retro.as_of} ${retro.last_close}`
+  return (
+    // 이 줄의 다른 조각(시각·태그)보다 밝다. 메모가 언제 쓰였는지는 곁들이는 정보지만
+    // 그 뒤 얼마나 올랐는지는 읽으라고 붙인 것이다. 회색을 더 낮추면 명암비가 AA 아래로
+    // 떨어져 아예 안 보인다 — 0단계에서 173곳을 올려 둔 이유다.
+    <span className="tabular text-neutral-400" title={span}>
+      그 뒤 <span className={changeColor(retro.change_rate)}>{formatRate(retro.change_rate)}</span>
+      {retro.index_label && retro.index_rate !== null && (
+        <span className="text-neutral-500">
+          {' '}
+          ({retro.index_label} {formatRate(retro.index_rate)})
+        </span>
+      )}
+    </span>
   )
 }
 
