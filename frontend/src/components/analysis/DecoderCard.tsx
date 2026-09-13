@@ -68,6 +68,8 @@ type Props = {
   /** 실적 추이 그래프. 넓은 화면에서만 그려진다. 재무는 이 카드가 받지 않고
    *  부르는 쪽이 만들어 넘긴다 — 국내와 미국이 출처도 단위도 다르기 때문이다. */
   performance?: ReactNode
+  /** claude.ai 로 넘길 프롬프트 뽑기. 넓은 화면 맨 끝에 붙는다. */
+  handoff?: ReactNode
   segments: AnalysisSegment[]
   /** 이 회사에 특유한 위험. 앞의 셋을 크게 보여주고 나머지는 접는다. */
   realRisks: DecoderRisk[]
@@ -100,6 +102,7 @@ export function DecoderCard({
   companyName,
   competitors,
   performance,
+  handoff,
   segments,
   realRisks,
   boilerplateRisks,
@@ -308,6 +311,10 @@ export function DecoderCard({
           </ul>
         </Section>
       )}
+
+      {/* 각주 앞이 아니라 각주 앞자리다 — 바로 위가 "아직 모르는 것"이고, 보고서를
+          다 읽고 남은 질문을 본 그 자리가 "그럼 이건 어디서 알아보지"가 되는 자리다. */}
+      {wide && handoff}
 
       {footer}
     </div>

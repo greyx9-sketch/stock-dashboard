@@ -3,6 +3,7 @@ import { fetchFinancials, fetchKrAnalysis, runKrAnalysis } from '../lib/api'
 import type { FinancialYear, KrAnalysis } from '../lib/api'
 import { formatBigWon } from '../lib/format'
 import { PerformanceChart } from './analysis/PerformanceChart'
+import { PromptHandoff } from './analysis/PromptHandoff'
 import type { PerformancePoint } from './analysis/PerformanceChart'
 import { Card } from './ui/Card'
 import { DecoderCard } from './analysis/DecoderCard'
@@ -247,6 +248,28 @@ function AnalysisBody({
       wide={wide}
       companyName={analysis.corp_name ?? analysis.stock_code}
       competitors={analysis.competitors}
+      handoff={
+        <PromptHandoff
+          facts={{
+            company: `${analysis.corp_name ?? analysis.stock_code} (${analysis.stock_code})`,
+            period: [analysis.report_name, analysis.received_date ? `${analysis.received_date} 접수` : null]
+          .filter(Boolean)
+          .join(' · '),
+            sourceUrl: analysis.source_url,
+            oneLiner: analysis.one_liner,
+            businessSummary: analysis.business_summary,
+            moneyFlow: analysis.money_flow,
+            segments: analysis.segments,
+            competitors: analysis.competitors,
+            risks: analysis.key_risks,
+            mdnaPoints: analysis.mdna_points,
+            moat: analysis.moat_and_competition,
+            openQuestions: analysis.open_questions,
+            financials: performance,
+            formatAmount: formatBigWon,
+          }}
+        />
+      }
       performance={
         performance.length > 0 ? (
           <PerformanceChart points={performance} formatAmount={formatBigWon} />

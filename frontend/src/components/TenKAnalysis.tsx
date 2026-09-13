@@ -3,6 +3,7 @@ import { fetchUsAnalysis, fetchUsFinancials, runUsAnalysis } from '../lib/api'
 import type { UsAnalysis, UsFinancialYear } from '../lib/api'
 import { formatUsd } from '../lib/format'
 import { PerformanceChart } from './analysis/PerformanceChart'
+import { PromptHandoff } from './analysis/PromptHandoff'
 import type { PerformancePoint } from './analysis/PerformanceChart'
 import { Card } from './ui/Card'
 import { DecoderCard } from './analysis/DecoderCard'
@@ -257,6 +258,29 @@ function AnalysisBody({
       wide={wide}
       companyName={analysis.ticker}
       competitors={analysis.competitors}
+      handoff={
+        <PromptHandoff
+          facts={{
+            company: `${analysis.ticker} (10-K)`,
+            period: [analysis.fiscal_year ? `FY${analysis.fiscal_year}` : null,
+          analysis.filed_date ? `${analysis.filed_date} 제출` : null]
+          .filter(Boolean)
+          .join(' · '),
+            sourceUrl: analysis.source_url,
+            oneLiner: analysis.one_liner,
+            businessSummary: analysis.business_summary,
+            moneyFlow: analysis.money_flow,
+            segments: analysis.segments,
+            competitors: analysis.competitors,
+            risks: realRisks,
+            mdnaPoints: analysis.mdna_points,
+            moat: analysis.moat_and_competition,
+            openQuestions: analysis.open_questions,
+            financials: performance,
+            formatAmount: formatUsd,
+          }}
+        />
+      }
       performance={
         performance.length > 0 ? (
           <PerformanceChart points={performance} formatAmount={formatUsd} />
