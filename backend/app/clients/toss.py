@@ -286,6 +286,36 @@ class TossClient:
             params={"symbols": ",".join(symbols)},
         )
 
+    async def get_candle_page(
+        self,
+        symbol: str,
+        *,
+        interval: str = "1d",
+        count: int = 100,
+        before: str | None = None,
+    ) -> tuple[list[dict[str, Any]], str | None]:
+        """캔들 한 페이지. 봉 목록과 **다음 페이지 커서**를 함께 돌려준다.
+
+        한 번에 최대 200 봉이라, 그보다 먼 과거가 필요하면 여러 번 불러야 한다. 그때
+        직접 시각을 계산하지 말고 응답의 `nextBefore` 를 **그대로** 다음 `before` 로 넘긴다
+        (스펙이 그렇게 하라고 적어 두었다). `before` 는 inclusive 라 페이지 경계의 봉
+        하나가 겹쳐 오므로, 받는 쪽에서 거래일로 중복을 걷어내야 한다.
+
+        `adjusted` 는 보내지 않는다 — 서버 기본값이 `true`(수정주가)이고, 액면분할·배당을
+        반영한 값이라야 긴 기간의 수익률이 맞는다. 분할한 날 하루에 -50% 가 찍히는 것은
+        주가가 내린 것이 아니다.
+        """
+        params: dict[str, Any] = {"symbol": symbol, "interval": interval, "count": count}
+        if before:
+            params["before"] = before
+        result = await self._request(
+            "/api/v1/candles", group="MARKET_DATA_CHART", params=params
+        )
+        # 페이지 응답이라 캔들 목록이 한 겹 안에 들어 있다.
+        if isinstance(result, dict):
+            return result.get("candles", []), result.get("nextBefore")
+        return result or [], None
+
     async def get_candles(
         self,
         symbol: str,
@@ -297,17 +327,12 @@ class TossClient:
         """캔들(OHLCV) 조회. interval 은 '1m' 또는 '1d', 한 번에 최대 200 봉.
 
         `before` 는 페이지네이션 상한(inclusive)이다. 이 시각과 같거나 이전인 봉만 돌아온다.
+        여러 페이지를 이어 받아야 하면 `get_candle_page` 를 쓴다.
         """
-        params: dict[str, Any] = {"symbol": symbol, "interval": interval, "count": count}
-        if before:
-            params["before"] = before
-        result = await self._request(
-            "/api/v1/candles", group="MARKET_DATA_CHART", params=params
+        candles, _ = await self.get_candle_page(
+            symbol, interval=interval, count=count, before=before
         )
-        # 페이지 응답이라 캔들 목록이 한 겹 안에 들어 있다.
-        if isinstance(result, dict):
-            return result.get("candles", [])
-        return result or []
+        return candles
 
     async def get_market_calendar_kr(self, day: str | None = None) -> dict[str, Any]:
         """국내 장 운영 시간 조회. 전일·당일·익일 3영업일 정보가 돌아온다.
@@ -403,19 +428,35 @@ class TossClient:
             params={"symbols": ",".join(symbols)},
         )
 
+    async def get_indicator_candle_page(
+        self, symbol: str, *, interval: str = "1d", count: int = 2, before: str | None = None
+    ) -> tuple[list[dict[str, Any]], str | None]:
+        """시장 지표 캔들 한 페이지. 종목 캔들과 같은 페이지 규칙을 쓴다.
+
+        최신순으로 오고(첫 항목이 가장 최근) 한 번에 최대 200 봉이다. 더 먼 과거는
+        응답의 `nextBefore` 를 그대로 다음 `before` 로 넘겨 이어 받는다.
+        """
+        params: dict[str, Any] = {"interval": interval, "count": count}
+        if before:
+            params["before"] = before
+        payload = await self._request(
+            f"/api/v1/market-indicators/{symbol}/candles",
+            group="MARKET_INDICATOR_CHART",
+            params=params,
+        )
+        return (payload.get("candles") or []), payload.get("nextBefore")
+
     async def get_indicator_candles(
-        self, symbol: str, *, interval: str = "1d", count: int = 2
+        self, symbol: str, *, interval: str = "1d", count: int = 2, before: str | None = None
     ) -> list[dict[str, Any]]:
         """시장 지표 캔들. 최신순으로 온다(첫 항목이 가장 최근).
 
         지표 현재가에 기준가가 없어서, 등락률을 계산하려면 이걸로 전일 종가를 받아야 한다.
         """
-        payload = await self._request(
-            f"/api/v1/market-indicators/{symbol}/candles",
-            group="MARKET_INDICATOR_CHART",
-            params={"interval": interval, "count": count},
+        candles, _ = await self.get_indicator_candle_page(
+            symbol, interval=interval, count=count, before=before
         )
-        return payload.get("candles") or []
+        return candles
 
     async def get_exchange_rate(
         self, base: str = "USD", quote: str = "KRW"

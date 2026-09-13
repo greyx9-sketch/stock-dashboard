@@ -11,10 +11,12 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 from fastapi import APIRouter, HTTPException, Path, Query
 from pydantic import BaseModel, Field
 
-from app.services import notes as service
+from app.services import note_return, notes as service
 
 router = APIRouter(prefix="/api/notes", tags=["종목 메모"])
 
@@ -50,6 +52,43 @@ def list_notes(
 ) -> list[NoteResponse]:
     """최신순으로 돌려준다."""
     return [_out(n) for n in service.list_notes(symbol, limit=limit)]
+
+
+class NoteReturnOut(BaseModel):
+    """메모 한 건의 회고."""
+
+    note_id: int
+    symbol: str
+    base_date: str = Field(description="기준 거래일. 메모를 쓴 날, 휴장이면 직전 거래일")
+    base_close: Decimal
+    as_of: str = Field(description="비교 대상 거래일")
+    last_close: Decimal
+    change_rate: float = Field(description="그 사이 등락률 (%)")
+    days: int = Field(description="두 거래일 사이의 달력 일수")
+    index_label: str | None = Field(description="견준 지수 이름. 코스피 / 코스닥 / S&P500")
+    index_rate: float | None = Field(description="같은 기간 지수 등락률 (%)")
+
+
+class PerformanceOut(BaseModel):
+    items: list[NoteReturnOut] = Field(description="회고를 낼 수 있었던 메모만 담긴다")
+    error: str | None = Field(description="시세를 못 받았으면 그 이유")
+
+
+@router.get("/performance", summary="메모 회고 — 쓴 뒤 얼마나 올랐나")
+async def note_performance(
+    symbol: str | None = Query(None, description="종목 코드. 없으면 전체"),
+    limit: int = Query(50, ge=1, le=service.MAX_LIMIT),
+) -> PerformanceOut:
+    """메모를 쓴 뒤 주가가 어떻게 됐는지를 메모별로 돌려준다.
+
+    **목록과 따로 두었다.** `GET /api/notes` 는 DB 만 읽어 즉시 답하는 경로다. 여기에
+    회고를 합치면 토스가 답할 때까지 메모 본문이 안 뜨고, 토스가 막힌 날에는 메모가
+    통째로 빈다. 화면은 목록을 먼저 그리고 회고를 나중에 채운다.
+
+    회고를 낼 수 없는 메모(상장 전, 거래 정지, 종가를 못 받은 종목)는 그냥 빠진다.
+    """
+    items, error = await note_return.note_returns(service.list_notes(symbol, limit=limit))
+    return PerformanceOut(items=[NoteReturnOut(**vars(i)) for i in items], error=error)
 
 
 @router.post("", summary="메모 쓰기", status_code=201)
