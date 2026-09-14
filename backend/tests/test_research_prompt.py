@@ -168,6 +168,31 @@ def test_every_preset_orders_research_before_writing(preset):
     assert rp.PRESETS[preset]["hint"]
 
 
+@pytest.mark.parametrize("preset", sorted(rp.PRESETS))
+def test_every_preset_asks_for_a_visual_artifact(preset):
+    """**무엇을 시키든 결과물의 모양은 같아야 한다.**
+
+    첫 실사용에서 NVDA 분석이 훌륭한 내용으로 돌아왔는데 글벽이었다. 돈의 흐름,
+    부문 비중, 6개년 실적, 위험의 성격×시점 — 전부 그림이 더 빨리 읽히는 것들이
+    문단으로 적혀 있었다. 그래서 결과물 규칙을 지시문 넷 **전부**에 붙였다.
+    한 군데라도 빠지면 그 지시서만 글벽으로 돌아온다.
+    """
+    text = rp._assemble("머리말", ["### 표\n1"], rp.PRESETS[preset]["ask"])
+
+    assert "아티팩트" in text
+    # "보기 좋게" 같은 말은 아무것도 바꾸지 못한다. 내용↔그림 짝이 있어야 그림이 나온다.
+    assert "흐름도" in text and "마인드맵" in text
+    # 그림이 지어낸 숫자를 나르지 않게 하는 것이 이 규칙의 핵심이다.
+    assert "위 표의 값" in text
+
+
+def test_output_rules_come_last():
+    """무엇을 시킬지 읽은 **다음에** 어떤 모양으로 낼지를 읽는 순서라야 한다."""
+    text = rp._assemble("머리말", ["### 표\n1"], "## 해 주실 일\n분석하세요")
+
+    assert text.index("## 해 주실 일") < text.index(rp.OUTPUT_RULES)
+
+
 def test_unknown_preset_falls_back_instead_of_failing():
     """모르는 종류를 물으면 기본으로 답한다. 주소를 손으로 고친 사람에게 500 을 주지 않는다."""
     assert rp.PRESETS.get("없는것") is None
