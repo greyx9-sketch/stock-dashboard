@@ -38,6 +38,31 @@ export function ResearchPrompt({ symbol, market }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState<'yes' | 'manual' | null>(null)
   const areaRef = useRef<HTMLTextAreaElement>(null)
+  const resetTimer = useRef<number | null>(null)
+
+  /* 눌렀다는 표시를 **단추 위에서** 하고 잠시 뒤 되돌린다.
+   *
+   * 처음에는 단추 옆에 "복사했습니다"를 띄웠는데 사용자가 "눌렸는지 모르겠다"고 했다.
+   * 둘 다 틀렸던 것이다 —
+   *   1. 눈은 **단추**를 보고 있는데 표시는 그 옆 11px 회색 글씨였다.
+   *   2. 한 번 뜬 표시가 사라지지 않아서 **두 번째로 누르면 변화가 0** 이었다.
+   * 그래서 되돌리는 타이머를 둔다. 다시 누르면 다시 바뀌어야 눌린 줄 안다. */
+  const flash = (kind: 'yes' | 'manual') => {
+    setCopied(kind)
+    if (resetTimer.current) window.clearTimeout(resetTimer.current)
+    // 실패 안내는 읽어야 하는 글이라 더 오래 둔다.
+    resetTimer.current = window.setTimeout(
+      () => setCopied(null),
+      kind === 'yes' ? 2000 : 8000,
+    )
+  }
+
+  // 화면을 떠난 뒤 타이머가 남아 state 를 건드리지 않게 한다.
+  useEffect(() => {
+    return () => {
+      if (resetTimer.current) window.clearTimeout(resetTimer.current)
+    }
+  }, [])
 
   // 지시서 종류는 서버가 들고 있다. 프롬프트 본문과 같은 곳에 있어야 둘이 어긋나지 않는다.
   useEffect(() => {
@@ -85,7 +110,7 @@ export function ResearchPrompt({ symbol, market }: Props) {
     try {
       if (navigator.clipboard && window.isSecureContext) {
         await navigator.clipboard.writeText(text)
-        setCopied('yes')
+        flash('yes')
         return
       }
     } catch {
@@ -105,7 +130,7 @@ export function ResearchPrompt({ symbol, market }: Props) {
       const ok = document.execCommand('copy')
       document.body.removeChild(scratch)
       if (ok) {
-        setCopied('yes')
+        flash('yes')
         return
       }
     } catch {
@@ -113,7 +138,7 @@ export function ResearchPrompt({ symbol, market }: Props) {
     }
 
     // 3. 둘 다 막혔다. 전체를 골라 둔다 — 사용자가 Ctrl+C 만 누르면 된다.
-    setCopied('manual')
+    flash('manual')
     window.setTimeout(() => {
       areaRef.current?.focus()
       areaRef.current?.select()
@@ -172,12 +197,23 @@ export function ResearchPrompt({ symbol, market }: Props) {
         {prompt && !loading && (
           <>
             <div className="flex flex-wrap items-center gap-2">
+              {/* 눌렸다는 것이 **단추 위에서** 보여야 한다. 글자와 바탕색이 같이 바뀌고,
+                  2초 뒤 되돌아온다 — 되돌아와야 다음에 눌렀을 때도 변화가 보인다.
+                  글자 수가 달라 단추가 들썩이지 않게 최소 폭을 준다. */}
               <button
                 type="button"
                 onClick={copy}
-                className="rounded-md bg-neutral-100 px-3 py-1.5 text-xs text-neutral-900 transition-colors hover:bg-white"
+                /* 색이 아니라 **밝기를 뒤집어** 알린다. 초록은 미국식 상승과 겹치고
+                   빨강·파랑은 이 화면에서 이미 상승·하락이다(포커스 링을 무채색으로
+                   둔 것과 같은 이유). 밝은 단추가 어두워지는 것은 뜻이 없는 변화라
+                   시세 숫자 옆에서 방향으로 오독될 일이 없다. */
+                className={`min-w-[92px] rounded-md px-3 py-1.5 text-xs transition-colors ${
+                  copied === 'yes'
+                    ? 'bg-neutral-700 text-neutral-100'
+                    : 'bg-neutral-100 text-neutral-900 hover:bg-white'
+                }`}
               >
-                복사
+                {copied === 'yes' ? '복사됨 ✓' : '복사'}
               </button>
               <a
                 href="https://claude.ai/new"
@@ -187,12 +223,10 @@ export function ResearchPrompt({ symbol, market }: Props) {
               >
                 claude.ai 열기 ↗
               </a>
-              {/* 결과는 소리 내어 읽히게 한다. 색만으로 알리지 않는다. */}
-              {copied === 'yes' && (
-                <span role="status" className="text-[11px] text-neutral-400">
-                  복사했습니다
-                </span>
-              )}
+              {/* 화면 낭독기용. 색과 글자 변화만으로는 눈으로 보는 사람에게만 전해진다. */}
+              <span role="status" className="sr-only">
+                {copied === 'yes' ? '프롬프트를 복사했습니다' : ''}
+              </span>
               {copied === 'manual' && (
                 <span role="status" className="text-[11px] text-amber-400/90">
                   브라우저가 복사를 막았습니다 — 아래 글이 선택돼 있으니 Ctrl+C 를 누르세요
